@@ -1,0 +1,76 @@
+# =========================
+# .NET / ASP.NET Core
+# =========================
+
+**/bin/
+**/obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+
+# Test results
+TestResults/
+*.trx
+
+# =========================
+# Environment / Secrets
+# =========================
+
+.env
+.env.*
+!.env.example
+
+# User-specific ASP.NET config
+**/appsettings.Local.json
+**/appsettings.*.Local.json
+
+# =========================
+# Logs
+# =========================
+
+*.log
+logs/
+
+# =========================
+# Node / Next.js
+# =========================
+
+**/node_modules/
+**/.next/
+**/out/
+
+# Next.js
+**/.vercel/
+
+# npm / pnpm / yarn
+**/.npm/
+**/.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# OS
+# =========================
+
+.DS_Store
+Thumbs.db
+
+# =========================
+# Coverage
+# =========================
+
+coverage/
+.coverage/
