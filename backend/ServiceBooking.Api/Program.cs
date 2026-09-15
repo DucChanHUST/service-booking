@@ -45,6 +45,7 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ServiceManagementService>();
 builder.Services.AddScoped<StaffManagementService>();
 builder.Services.AddScoped<ScheduleManagementService>();
+builder.Services.AddScoped<BookingService>();
 
 builder.Services.AddEndpointsApiExplorer();
 
@@ -85,7 +86,7 @@ using (var scope = app.Services.CreateScope())
   var db = scope.ServiceProvider
       .GetRequiredService<AppDbContext>();
 
-  await DbSeeder.SeedAsync(db);
+  // await DbSeeder.SeedAsync(db);
 }
 
 app.Run();
