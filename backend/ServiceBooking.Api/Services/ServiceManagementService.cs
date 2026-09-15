@@ -132,4 +132,22 @@ public class ServiceManagementService
       IsActive = service.IsActive
     };
   }
+
+  public async Task<ServiceResponse?> GetByIdAsync(
+    Guid id)
+  {
+    return await _dbContext.Services
+      .AsNoTracking()
+      .Where(x => x.Id == id)
+      .Select(x => new ServiceResponse
+      {
+        Id = x.Id,
+        Name = x.Name,
+        Description = x.Description,
+        DurationMinutes = x.DurationMinutes,
+        Price = x.Price,
+        IsActive = x.IsActive
+      })
+      .FirstOrDefaultAsync();
+  }
 }

@@ -96,4 +96,23 @@ public class ServicesController : ControllerBase
       });
     }
   }
+
+  [AllowAnonymous]
+  [HttpGet("{id:guid}")]
+  public async Task<ActionResult<ServiceResponse>> GetById(
+    Guid id)
+  {
+    var result = await _serviceManagementService
+      .GetByIdAsync(id);
+
+    if (result is null)
+    {
+      return NotFound(new
+      {
+        message = "Service not found."
+      });
+    }
+
+    return Ok(result);
+  }
 }
