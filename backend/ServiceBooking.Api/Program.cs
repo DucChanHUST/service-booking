@@ -43,6 +43,8 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ServiceManagementService>();
+builder.Services.AddScoped<StaffManagementService>();
+builder.Services.AddScoped<ScheduleManagementService>();
 
 builder.Services.AddEndpointsApiExplorer();
 
