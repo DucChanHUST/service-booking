@@ -162,27 +162,43 @@ public static class DbSeeder
     for (var i = 0; i < 7; i++)
     {
       var date = DateOnly.FromDateTime(
-          DateTime.UtcNow.AddDays(i));
+          DateTime.Today.AddDays(i));
 
-      schedules.Add(
-          new WorkSchedule
-          {
-            Id = Guid.NewGuid(),
-            StaffId = staff1.Id,
-            WorkDate = date,
-            StartTime = new TimeOnly(9, 0),
-            EndTime = new TimeOnly(17, 0)
-          });
+      schedules.Add(new WorkSchedule
+      {
+        Id = Guid.NewGuid(),
+        StaffId = staff1.Id,
+        WorkDate = date,
+        StartTime = new TimeOnly(8, 0),
+        EndTime = new TimeOnly(12, 0)
+      });
 
-      schedules.Add(
-          new WorkSchedule
-          {
-            Id = Guid.NewGuid(),
-            StaffId = staff2.Id,
-            WorkDate = date,
-            StartTime = new TimeOnly(9, 0),
-            EndTime = new TimeOnly(17, 0)
-          });
+      schedules.Add(new WorkSchedule
+      {
+        Id = Guid.NewGuid(),
+        StaffId = staff2.Id,
+        WorkDate = date,
+        StartTime = new TimeOnly(8, 0),
+        EndTime = new TimeOnly(12, 0)
+      });
+
+      schedules.Add(new WorkSchedule
+      {
+        Id = Guid.NewGuid(),
+        StaffId = staff1.Id,
+        WorkDate = date,
+        StartTime = new TimeOnly(13, 30),
+        EndTime = new TimeOnly(18, 0)
+      });
+
+      schedules.Add(new WorkSchedule
+      {
+        Id = Guid.NewGuid(),
+        StaffId = staff2.Id,
+        WorkDate = date,
+        StartTime = new TimeOnly(13, 30),
+        EndTime = new TimeOnly(18, 0)
+      });
     }
 
     db.WorkSchedules.AddRange(schedules);
