@@ -5,10 +5,21 @@ using Microsoft.OpenApi;
 using ServiceBooking.Api.Data;
 using ServiceBooking.Api.Services;
 using System.Text;
+using System.Text.Json.Serialization;
+using ServiceBooking.Api.Converters;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(options =>
+    {
+      options.JsonSerializerOptions.Converters.Add(
+        new JsonStringEnumConverter());
+
+      options.JsonSerializerOptions.Converters.Add(
+        new TimeOnlyJsonConverter());
+    });
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(
