@@ -41,6 +41,17 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddCors(options =>
+{
+  options.AddPolicy("AllowFrontend", policy =>
+  {
+    policy
+      .WithOrigins("http://localhost:3000")
+      .AllowAnyHeader()
+      .AllowAnyMethod();
+  });
+});
+
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ServiceManagementService>();
 builder.Services.AddScoped<StaffManagementService>();
@@ -75,6 +86,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
 app.UseAuthorization();
