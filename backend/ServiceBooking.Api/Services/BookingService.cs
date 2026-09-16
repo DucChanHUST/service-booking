@@ -15,40 +15,48 @@ public class BookingService(AppDbContext dbContext)
       Guid staffId,
       DateOnly date)
   {
+    var today = DateOnly.FromDateTime(DateTime.Now);
+    var now = TimeOnly.FromDateTime(DateTime.Now);
+
     var service = await _dbContext.Services
-        .AsNoTracking()
-        .FirstOrDefaultAsync(x => x.Id == serviceId);
+      .AsNoTracking()
+      .Where(x => x.Id == serviceId)
+      .Select(x => new
+      {
+        x.Id,
+        x.IsActive,
+        x.DurationMinutes
+      })
+      .FirstOrDefaultAsync();
 
     if (service is null)
     {
-      throw new KeyNotFoundException(
-          "Service not found."
-      );
+      throw new KeyNotFoundException("Service not found.");
     }
 
     if (!service.IsActive)
     {
-      throw new ArgumentException(
-          "Service is inactive."
-      );
+      throw new ArgumentException("Service is inactive.");
     }
 
     var staff = await _dbContext.Staffs
         .AsNoTracking()
-        .FirstOrDefaultAsync(x => x.Id == staffId);
+        .Where(x => x.Id == staffId)
+        .Select(x => new
+        {
+          x.Id,
+          x.IsActive
+        })
+        .FirstOrDefaultAsync();
 
     if (staff is null)
     {
-      throw new KeyNotFoundException(
-          "Staff not found."
-      );
+      throw new KeyNotFoundException("Staff not found.");
     }
 
     if (!staff.IsActive)
     {
-      throw new InvalidOperationException(
-          "Staff is inactive."
-      );
+      throw new InvalidOperationException("Staff is inactive.");
     }
 
     var response = new AvailableSlotsResponse
@@ -60,150 +68,117 @@ public class BookingService(AppDbContext dbContext)
       AvailableRanges = []
     };
 
-    var today = DateOnly.FromDateTime(DateTime.Now);
-
-    // Past date => no available time.
     if (date < today)
     {
       return response;
     }
 
     var schedules = await _dbContext.WorkSchedules
-        .AsNoTracking()
-        .Where(x =>
-            x.StaffId == staffId &&
-            x.WorkDate == date)
-        .OrderBy(x => x.StartTime)
-        .ToListAsync();
+      .AsNoTracking()
+      .Where(x =>
+        x.StaffId == staffId &&
+        x.WorkDate == date)
+      .OrderBy(x => x.StartTime)
+      .Select(x => new
+      {
+        x.StartTime,
+        x.EndTime
+      })
+      .ToListAsync();
 
     if (schedules.Count == 0)
     {
       return response;
     }
 
-    // --------------------------------------------------------
-    // Convert the local date boundaries to UTC.
-    //
-    // Booking timestamps are stored as UTC in PostgreSQL.
-    // WorkSchedule is local business time.
-    // --------------------------------------------------------
-
-    var localDayStart = date.ToDateTime(
-        TimeOnly.MinValue
-    );
-
-    var localDayEnd = date
-        .AddDays(1)
-        .ToDateTime(TimeOnly.MinValue);
+    var localDayStart = date.ToDateTime(TimeOnly.MinValue);
+    var localDayEnd = date.AddDays(1).ToDateTime(TimeOnly.MinValue);
 
     var dayStartUtc = LocalToUtc(localDayStart);
     var dayEndUtc = LocalToUtc(localDayEnd);
 
     var bookings = await _dbContext.Bookings
-        .AsNoTracking()
-        .Where(x =>
-            x.StaffId == staffId &&
-            x.Status != BookingStatus.Cancelled &&
-            x.StartTime < dayEndUtc &&
-            x.EndTime > dayStartUtc)
-        .OrderBy(x => x.StartTime)
-        .ToListAsync();
+      .AsNoTracking()
+      .Where(x =>
+        x.StaffId == staffId &&
+        x.Status != BookingStatus.Cancelled &&
+        x.StartTime < dayEndUtc &&
+        x.EndTime > dayStartUtc)
+      .OrderBy(x => x.StartTime)
+      .Select(x => new
+      {
+        x.StartTime,
+        x.EndTime
+      })
+      .ToListAsync();
+
+    var localBookings = bookings
+      .Select(x => new
+      {
+        Start = TimeOnly.FromDateTime(UtcToLocal(x.StartTime)),
+        End = TimeOnly.FromDateTime(UtcToLocal(x.EndTime))
+      })
+      .ToList();
 
     foreach (var schedule in schedules)
     {
       var rangeStart = schedule.StartTime;
       var rangeEnd = schedule.EndTime;
 
-      // For today, don't allow booking before current time.
-      if (date == today)
-      {
-        var currentTime = TimeOnly.FromDateTime(
-            DateTime.Now
-        );
-
-        if (currentTime > rangeStart)
-        {
-          rangeStart = currentTime;
-        }
-      }
+      if (date == today && now > rangeStart)
+        rangeStart = now;
 
       if (rangeStart >= rangeEnd)
-      {
         continue;
-      }
 
       var current = rangeStart;
 
-      foreach (var booking in bookings)
+      foreach (var booking in localBookings)
       {
-        // DB stores UTC -> convert back to local
-        // before comparing with WorkSchedule.
-        var bookingStartLocal =
-            UtcToLocal(booking.StartTime);
-
-        var bookingEndLocal =
-            UtcToLocal(booking.EndTime);
-
-        var bookingStart =
-            TimeOnly.FromDateTime(
-                bookingStartLocal
-            );
-
-        var bookingEnd =
-            TimeOnly.FromDateTime(
-                bookingEndLocal
-            );
-
-        // Booking doesn't intersect this schedule.
-        if (
-            bookingEnd <= rangeStart ||
-            bookingStart >= rangeEnd
-        )
+        if (booking.End <= rangeStart)
         {
           continue;
         }
 
-        if (current < bookingStart)
-        {
-          var freeEnd =
-              bookingStart < rangeEnd
-                  ? bookingStart
-                  : rangeEnd;
-
-          AddAvailableRange(
-              response.AvailableRanges,
-              current,
-              freeEnd,
-              service.DurationMinutes
-          );
-        }
-
-        // Move cursor after booking.
-        if (bookingEnd > current)
-        {
-          current = bookingEnd;
-        }
-
-        if (current >= rangeEnd)
+        if (booking.Start >= rangeEnd)
         {
           break;
         }
+
+        if (current < booking.Start)
+        {
+          var freeEnd = booking.Start < rangeEnd
+            ? booking.Start
+            : rangeEnd;
+
+          AddAvailableRange(
+            response.AvailableRanges,
+            current,
+            freeEnd,
+            service.DurationMinutes
+          );
+        }
+
+        if (booking.End > current)
+          current = booking.End;
+
+        if (current >= rangeEnd)
+          break;
       }
 
       if (current < rangeEnd)
       {
         AddAvailableRange(
-            response.AvailableRanges,
-            current,
-            rangeEnd,
-            service.DurationMinutes
+          response.AvailableRanges,
+          current,
+          rangeEnd,
+          service.DurationMinutes
         );
       }
     }
 
     return response;
   }
-
   public async Task<BookingResponse> CreateAsync(
       Guid customerId,
       CreateBookingRequest request)
@@ -383,8 +358,7 @@ public class BookingService(AppDbContext dbContext)
     var totalCount = await query.CountAsync();
 
     var items = await query
-      .Where(x => x.CustomerId == customerId)
-      .OrderBy(x => x.CreatedAt)
+      .OrderByDescending(x => x.StartTime)
       .Skip((page - 1) * pageSize)
       .Take(pageSize)
       .Select(x => new BookingResponse

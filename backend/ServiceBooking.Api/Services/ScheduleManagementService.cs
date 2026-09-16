@@ -16,7 +16,6 @@ public class ScheduleManagementService(AppDbContext dbContext)
   {
     var query = _dbContext.WorkSchedules
       .AsNoTracking()
-      .Include(x => x.Staff)
       .AsQueryable();
 
     if (staffId.HasValue)
