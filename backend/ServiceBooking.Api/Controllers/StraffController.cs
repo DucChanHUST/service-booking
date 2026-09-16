@@ -100,6 +100,10 @@ public class StaffsController(
     {
       return NotFound(new { message = ex.Message });
     }
+    catch (ConflictException ex)
+    {
+      return Conflict(new { message = ex.Message });
+    }
     catch (ArgumentException ex)
     {
       return BadRequest(new { message = ex.Message });
@@ -107,7 +111,7 @@ public class StaffsController(
   }
 
   [Authorize(Roles = "Admin")]
-  [HttpPut("{scheduleId:guid}/schedules")]
+  [HttpPut("schedules/{scheduleId:guid}")]
   public async Task<ActionResult<ScheduleResponse>> UpdateScheduleById(
     Guid scheduleId,
     UpdateScheduleRequest request
@@ -133,7 +137,7 @@ public class StaffsController(
   }
 
   [Authorize(Roles = "Admin")]
-  [HttpDelete("{scheduleId:guid}/schedules")]
+  [HttpDelete("schedules/{scheduleId:guid}")]
   public async Task<IActionResult> DeleteScheduleById(Guid scheduleId)
   {
     var deleted = await _scheduleService.DeleteAsync(scheduleId);

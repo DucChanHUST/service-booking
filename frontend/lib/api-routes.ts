@@ -42,9 +42,9 @@ export const apiRoutes = {
   },
   schedules: {
     list: (staffId: string, params: QueryParams = {}) =>
-      withQuery(`staffs/${staffId}/schedules`, params),
-    create: (staffId: string) => `staffs/${staffId}/schedules`,
-    update: (scheduleId: string) => `/staffs/${scheduleId}/schedules`,
-    delete: (scheduleId: string) => `/staffs/${scheduleId}/schedules`,
+      withQuery(`/staffs/${staffId}/schedules`, params),
+    create: (staffId: string) => `/staffs/${staffId}/schedules`,
+    update: (scheduleId: string) => `/staffs/schedules/${scheduleId}`,
+    delete: (scheduleId: string) => `/staffs/schedules/${scheduleId}`,
   },
 } as const;
