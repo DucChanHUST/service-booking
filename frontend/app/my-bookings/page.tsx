@@ -2,9 +2,26 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { apiRoutes } from "@/lib/api-routes";
 import type { Booking, BookingStatus } from "@/types/booking";
 
 import AuthGuard from "@/components/auth/AuthGuard";
+
+interface MyBookingsResponse {
+  items: Booking[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+const statusFilters: Array<{ label: string; value: BookingStatus | "" }> = [
+  { label: "All", value: "" },
+  { label: "Pending", value: "Pending" },
+  { label: "Confirmed", value: "Confirmed" },
+  { label: "Completed", value: "Completed" },
+  { label: "Cancelled", value: "Cancelled" },
+];
 
 function formatDateTime(value: string) {
   const date = new Date(value);
@@ -37,6 +54,14 @@ function getStatusClass(status: BookingStatus) {
 function MyBookingsPageContent() {
   const [bookings, setBookings] = useState<Booking[]>([]);
 
+  const [status, setStatus] = useState<BookingStatus | "">("");
+
+  const [page, setPage] = useState(1);
+
+  const [totalPages, setTotalPages] = useState(1);
+
+  const [totalCount, setTotalCount] = useState(0);
+
   const [loading, setLoading] = useState(true);
 
   const [error, setError] = useState("");
@@ -49,21 +74,40 @@ function MyBookingsPageContent() {
 
   useEffect(() => {
     loadBookings();
-  }, []);
+  }, [page, status]);
 
   async function loadBookings() {
     try {
       setLoading(true);
       setError("");
 
-      const data = await api.get<Booking[]>("/bookings/my");
+      const data = await api.get<MyBookingsResponse>(
+        apiRoutes.bookings.mine({
+          page,
+          pageSize: 10,
+          status: status || undefined,
+        }),
+      );
 
-      setBookings(data);
+      setBookings(data.items);
+      setTotalPages(data.totalPages);
+      setTotalCount(data.totalCount);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load bookings.");
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleStatusChange(value: BookingStatus | "") {
+    setStatus(value);
+    setPage(1);
+    setCancellingId(null);
+  }
+
+  function goToPage(nextPage: number) {
+    setPage(Math.min(Math.max(nextPage, 1), totalPages));
+    setCancellingId(null);
   }
 
   function startCancel(bookingId: string) {
@@ -88,7 +132,7 @@ function MyBookingsPageContent() {
       setSubmitting(true);
       setError("");
 
-      await api.patch(`/bookings/${bookingId}/cancel`, {
+      await api.patch(apiRoutes.bookings.cancel(bookingId), {
         cancellationReason: cancellationReason.trim(),
       });
 
@@ -115,6 +159,38 @@ function MyBookingsPageContent() {
 
         <p className="mt-2 text-gray-600">View and manage your bookings.</p>
       </div>
+
+      <div className="mb-6 overflow-x-auto border-b border-gray-200">
+        <div className="flex min-w-max gap-6">
+          {statusFilters.map((filter) => (
+            <button
+              key={filter.value || "all"}
+              type="button"
+              onClick={() => handleStatusChange(filter.value)}
+              className={`border-b-2 px-1 pb-3 text-sm font-semibold transition ${
+                status === filter.value
+                  ? "border-(--brand) text-(--brand)"
+                  : "border-transparent text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!loading && (
+        <div className="mb-4 flex items-center justify-between text-sm text-gray-500">
+          <span>
+            {totalCount} booking{totalCount === 1 ? "" : "s"}
+          </span>
+          {totalPages > 1 && (
+            <span>
+              Page {page} of {totalPages}
+            </span>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="mb-6 rounded border border-red-200 bg-red-50 p-4 text-red-700">
@@ -266,6 +342,30 @@ function MyBookingsPageContent() {
                 )}
             </div>
           ))}
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="mt-6 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => goToPage(page - 1)}
+            disabled={page === 1 || loading}
+            className="rounded border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-gray-500">
+            {page} / {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => goToPage(page + 1)}
+            disabled={page === totalPages || loading}
+            className="rounded border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
         </div>
       )}
     </div>

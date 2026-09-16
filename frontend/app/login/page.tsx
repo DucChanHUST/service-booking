@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 import { api } from "@/lib/api";
+import { apiRoutes } from "@/lib/api-routes";
 import { LoginResponse } from "@/types/auth";
 
 export default function LoginPage() {
@@ -31,7 +32,7 @@ export default function LoginPage() {
     try {
       setLoading(true);
 
-      const result = await api.post<LoginResponse>("/auth/login", {
+      const result = await api.post<LoginResponse>(apiRoutes.auth.login, {
         email,
         password,
       });

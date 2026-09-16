@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { api } from "@/lib/api";
+import { apiRoutes } from "@/lib/api-routes";
 
 import type { Service } from "@/types/service";
 import type { Staff } from "@/types/staff";
@@ -87,14 +88,16 @@ function BookingPageContent() {
       return;
     }
 
+    const selectedServiceId = serviceId;
+
     async function loadData() {
       try {
         setLoading(true);
         setError("");
 
         const [serviceData, staffData] = await Promise.all([
-          api.get<Service>(`/services/${serviceId}`),
-          api.get<Staff[]>("/staffs"),
+          api.get<Service>(apiRoutes.services.detail(selectedServiceId)),
+          api.get<Staff[]>(apiRoutes.staffs.list),
         ]);
 
         setService(serviceData);
@@ -122,6 +125,8 @@ function BookingPageContent() {
       return;
     }
 
+    const selectedServiceId = serviceId;
+
     async function loadAvailability() {
       try {
         setLoadingAvailability(true);
@@ -129,10 +134,11 @@ function BookingPageContent() {
         setStartTime("");
 
         const data = await api.get<AvailableSlots>(
-          `/bookings/available-slots` +
-            `?serviceId=${serviceId}` +
-            `&staffId=${staffId}` +
-            `&date=${date}`,
+          apiRoutes.bookings.availableSlots({
+            serviceId: selectedServiceId,
+            staffId,
+            date,
+          }),
         );
 
         setAvailability(data);
@@ -214,7 +220,7 @@ function BookingPageContent() {
 
       const result = await api.post<{
         bookingCode: string;
-      }>("/bookings", request);
+      }>(apiRoutes.bookings.create, request);
 
       setSuccess(`Booking created successfully. Code: ${result.bookingCode}`);
 
@@ -225,10 +231,7 @@ function BookingPageContent() {
        * Refresh availability
        */
       const updated = await api.get<AvailableSlots>(
-        `/bookings/available-slots` +
-          `?serviceId=${serviceId}` +
-          `&staffId=${staffId}` +
-          `&date=${date}`,
+        apiRoutes.bookings.availableSlots({ serviceId, staffId, date }),
       );
 
       setAvailability(updated);

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { apiRoutes } from "@/lib/api-routes";
 import type { Service } from "@/types/service";
 
 import AuthGuard from "@/components/auth/AuthGuard";
@@ -30,7 +31,7 @@ function ServicesPageContent() {
       setError("");
 
       const data = await api.get<ServiceListResponse>(
-        "/services?page=1&pageSize=20",
+        apiRoutes.services.list({ page: 1, pageSize: 20 }),
       );
 
       setServices(data.items.filter((service) => service.isActive));

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { apiRoutes } from "@/lib/api-routes";
 import type {
   CreateServiceRequest,
   Service,
@@ -40,17 +41,12 @@ function AdminServicesPageContent() {
       setLoading(true);
       setError("");
 
-      const query = new URLSearchParams({
-        page: "1",
-        pageSize: "50",
-      });
-
-      if (search.trim()) {
-        query.set("search", search.trim());
-      }
-
       const result = await api.get<ServiceListResponse>(
-        `/services?${query.toString()}`,
+        apiRoutes.services.list({
+          page: 1,
+          pageSize: 50,
+          search: search.trim() || undefined,
+        }),
       );
 
       setServices(result.items);
@@ -111,9 +107,9 @@ function AdminServicesPageContent() {
             true,
         };
 
-        await api.put(`/services/${editingId}`, body);
+        await api.put(apiRoutes.services.update(editingId), body);
       } else {
-        await api.post("/services", form);
+        await api.post(apiRoutes.services.create, form);
       }
 
       resetForm();
@@ -137,7 +133,7 @@ function AdminServicesPageContent() {
         isActive: !service.isActive,
       };
 
-      await api.put(`/services/${service.id}`, body);
+      await api.put(apiRoutes.services.update(service.id), body);
 
       await loadServices();
     } catch (err) {

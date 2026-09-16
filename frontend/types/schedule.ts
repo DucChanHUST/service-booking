@@ -8,7 +8,12 @@ export interface Schedule {
 }
 
 export interface CreateScheduleRequest {
-  staffId: string;
+  workDate: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface UpdateScheduleRequest {
   workDate: string;
   startTime: string;
   endTime: string;

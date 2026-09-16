@@ -2,7 +2,12 @@
 
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { apiRoutes } from "@/lib/api-routes";
 import type { Staff } from "@/types/staff";
+import type {
+  CreateScheduleRequest,
+  UpdateScheduleRequest,
+} from "@/types/schedule";
 
 import AuthGuard from "@/components/auth/AuthGuard";
 
@@ -17,19 +22,6 @@ interface Schedule {
 
 interface ScheduleResponse {
   items?: Schedule[];
-}
-
-interface CreateScheduleRequest {
-  staffId: string;
-  workDate: string;
-  startTime: string;
-  endTime: string;
-}
-
-interface UpdateScheduleRequest {
-  workDate: string;
-  startTime: string;
-  endTime: string;
 }
 
 function getToday() {
@@ -59,7 +51,7 @@ function AdminSchedulesPageContent() {
       setLoadingStaffs(true);
       setError("");
 
-      const result = await api.get<Staff[]>("/staffs");
+      const result = await api.get<Staff[]>(apiRoutes.staffs.list);
 
       setStaffs(result);
 
@@ -83,14 +75,11 @@ function AdminSchedulesPageContent() {
       setLoadingSchedules(true);
       setError("");
 
-      const query = new URLSearchParams({
-        staffId: selectedStaffId,
-        from: selectedDate,
-        to: selectedDate,
-      });
-
       const result = await api.get<ScheduleResponse | Schedule[]>(
-        `/schedules?${query.toString()}`,
+        apiRoutes.schedules.list(selectedStaffId, {
+          from: selectedDate,
+          to: selectedDate,
+        }),
       );
 
       const items = Array.isArray(result) ? result : (result.items ?? []);
@@ -158,16 +147,15 @@ function AdminSchedulesPageContent() {
           endTime,
         };
 
-        await api.put(`/schedules/${editingId}`, body);
+        await api.put(apiRoutes.schedules.update(editingId), body);
       } else {
         const body: CreateScheduleRequest = {
-          staffId: selectedStaffId,
           workDate: selectedDate,
           startTime,
           endTime,
         };
 
-        await api.post("/schedules", body);
+        await api.post(apiRoutes.schedules.create(selectedStaffId), body);
       }
 
       resetForm();
@@ -192,7 +180,7 @@ function AdminSchedulesPageContent() {
     try {
       setError("");
 
-      await api.delete(`/schedules/${schedule.id}`);
+      await api.delete(apiRoutes.schedules.delete(schedule.id));
 
       if (editingId === schedule.id) {
         resetForm();

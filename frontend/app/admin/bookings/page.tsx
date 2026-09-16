@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { apiRoutes } from "@/lib/api-routes";
 import type { Booking, BookingStatus } from "@/types/booking";
 
 import AuthGuard from "@/components/auth/AuthGuard";
@@ -12,6 +13,14 @@ const statuses: BookingStatus[] = [
   "Completed",
   "Cancelled",
 ];
+
+interface BookingListResponse {
+  items: Booking[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("vi-VN", {
@@ -57,33 +66,37 @@ function AdminBookingPageContent() {
 
   const [date, setDate] = useState("");
   const [status, setStatus] = useState<BookingStatus | "">("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const [error, setError] = useState("");
 
-  async function loadBookings() {
+  async function loadBookings(
+    requestedPage = page,
+    requestedDate = date,
+    requestedStatus = status,
+  ) {
     try {
       setLoading(true);
       setError("");
 
-      const query = new URLSearchParams({
-        page: "1",
-        pageSize: "100",
-      });
+      const result = await api.get<BookingListResponse>(
+        apiRoutes.bookings.list({
+          page: requestedPage,
+          pageSize: 10,
+          date: requestedDate || undefined,
+          status: requestedStatus || undefined,
+        }),
+      );
 
-      if (date) {
-        query.set("date", date);
-      }
-
-      if (status) {
-        query.set("status", status);
-      }
-
-      const result = await api.get<Booking[]>(`/bookings?${query.toString()}`);
-
-      setBookings(result);
+      setBookings(result.items);
+      setPage(result.page);
+      setTotalPages(result.totalPages);
+      setTotalCount(result.totalCount);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load bookings.");
     } finally {
@@ -93,7 +106,23 @@ function AdminBookingPageContent() {
 
   useEffect(() => {
     loadBookings();
-  }, []);
+  }, [page]);
+
+  function applyFilters() {
+    setPage(1);
+    loadBookings(1);
+  }
+
+  function clearFilters() {
+    setDate("");
+    setStatus("");
+    setPage(1);
+    loadBookings(1, "", "");
+  }
+
+  function goToPage(nextPage: number) {
+    setPage(Math.min(Math.max(nextPage, 1), totalPages));
+  }
 
   async function handleStatusChange(
     booking: Booking,
@@ -107,7 +136,7 @@ function AdminBookingPageContent() {
       setUpdatingId(booking.id);
       setError("");
 
-      await api.patch(`/bookings/${booking.id}/status`, {
+      await api.patch(apiRoutes.bookings.updateStatus(booking.id), {
         status: newStatus,
       });
 
@@ -147,7 +176,7 @@ function AdminBookingPageContent() {
             </h2>
           </div>
           <p className="text-sm text-(--muted)">
-            {bookings.length} result{bookings.length === 1 ? "" : "s"}
+            {totalCount} result{totalCount === 1 ? "" : "s"}
           </p>
         </div>
         <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end">
@@ -184,17 +213,14 @@ function AdminBookingPageContent() {
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={loadBookings}
+              onClick={applyFilters}
               className="rounded-xl bg-(--brand) px-4 py-3 text-sm font-bold text-white hover:bg-(--brand-dark)"
             >
               Apply filters
             </button>
             <button
               type="button"
-              onClick={() => {
-                setDate("");
-                setStatus("");
-              }}
+              onClick={clearFilters}
               className="rounded-xl border border-(--border) px-4 py-3 text-sm font-semibold text-foreground hover:bg-gray-50"
             >
               Clear
@@ -313,6 +339,30 @@ function AdminBookingPageContent() {
           </div>
         )}
       </section>
+
+      {totalPages > 1 && (
+        <div className="mt-6 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => goToPage(page - 1)}
+            disabled={page === 1 || loading}
+            className="rounded-xl border border-(--border) px-4 py-2 text-sm font-semibold text-foreground hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-(--muted)">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => goToPage(page + 1)}
+            disabled={page === totalPages || loading}
+            className="rounded-xl border border-(--border) px-4 py-2 text-sm font-semibold text-foreground hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      )}
     </main>
   );
 }
