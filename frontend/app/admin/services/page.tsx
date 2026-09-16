@@ -371,7 +371,7 @@ function AdminServicesPageContent() {
                         {service.durationMinutes} min
                       </td>
                       <td className="py-4 pr-4 font-semibold text-foreground">
-                        {service.price.toLocaleString("vi-VN")} VND
+                        {service.price.toLocaleString("vi-VN")}₫
                       </td>
                       <td className="py-4 pr-4">
                         <span

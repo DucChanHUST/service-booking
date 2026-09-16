@@ -142,7 +142,7 @@ function ServicesPageContent() {
                       Starting at
                     </p>
                     <p className="mt-1 text-2xl font-bold tracking-tight text-foreground">
-                      ${service.price.toFixed(2)}
+                      {service.price.toLocaleString("vi-VN")}₫
                     </p>
                   </div>
                   <Link

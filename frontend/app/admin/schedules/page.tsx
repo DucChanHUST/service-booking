@@ -28,12 +28,52 @@ function getToday() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function parseDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+
+  return new Date(year, month - 1, day);
+}
+
+function formatDate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getWeekDays(value: string) {
+  const date = parseDate(value);
+  const dayOfWeek = date.getDay();
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  date.setDate(date.getDate() + mondayOffset);
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const weekDay = new Date(date);
+    weekDay.setDate(date.getDate() + index);
+
+    return {
+      date: formatDate(weekDay),
+      label: weekDay.toLocaleDateString("en-US", { weekday: "short" }),
+      day: weekDay.getDate(),
+    };
+  });
+}
+
+function timeToMinutes(value: string) {
+  const [hours, minutes] = value.slice(0, 5).split(":").map(Number);
+
+  return hours * 60 + minutes;
+}
+
 function AdminSchedulesPageContent() {
   const [staffs, setStaffs] = useState<Staff[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
 
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [selectedDate, setSelectedDate] = useState(getToday());
+  const [calendarDate, setCalendarDate] = useState(getToday());
 
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("12:00");
@@ -75,10 +115,12 @@ function AdminSchedulesPageContent() {
       setLoadingSchedules(true);
       setError("");
 
+      const weekDays = getWeekDays(calendarDate);
+
       const result = await api.get<ScheduleResponse | Schedule[]>(
         apiRoutes.schedules.list(selectedStaffId, {
-          from: selectedDate,
-          to: selectedDate,
+          from: weekDays[0].date,
+          to: weekDays[6].date,
         }),
       );
 
@@ -102,7 +144,7 @@ function AdminSchedulesPageContent() {
 
   useEffect(() => {
     loadSchedules();
-  }, [selectedStaffId, selectedDate]);
+  }, [selectedStaffId, calendarDate]);
 
   function resetForm() {
     setEditingId(null);
@@ -113,6 +155,7 @@ function AdminSchedulesPageContent() {
   function startEdit(schedule: Schedule) {
     setEditingId(schedule.id);
 
+    setSelectedDate(schedule.workDate);
     setStartTime(schedule.startTime.slice(0, 5));
     setEndTime(schedule.endTime.slice(0, 5));
   }
@@ -195,6 +238,8 @@ function AdminSchedulesPageContent() {
   }
 
   const selectedStaff = staffs.find((staff) => staff.id === selectedStaffId);
+  const weekDays = getWeekDays(calendarDate);
+  const hourLabels = Array.from({ length: 24 }, (_, hour) => hour);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -260,8 +305,12 @@ function AdminSchedulesPageContent() {
               <input
                 id="schedule-date"
                 type="date"
+                lang="vi-VN"
                 value={selectedDate}
-                onChange={(event) => setSelectedDate(event.target.value)}
+                onChange={(event) => {
+                  setSelectedDate(event.target.value);
+                  setCalendarDate(event.target.value);
+                }}
                 className="w-full rounded-xl border border-(--border) px-4 py-3 text-sm outline-none transition focus:border-(--brand) focus:ring-4 focus:ring-[#e1f1ed]"
               />
             </div>
@@ -322,17 +371,18 @@ function AdminSchedulesPageContent() {
           </form>
         </section>
 
-        <section className="rounded-2xl border border-(--border) bg-white p-6 sm:p-8">
+        <section className="min-w-0 rounded-2xl border border-(--border) bg-white p-6 sm:p-8">
           <div className="border-b border-(--border) pb-6">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-(--muted)">
-              Daily coverage
+              Weekly timetable
             </p>
             <h2 className="mt-2 text-2xl font-bold tracking-tight text-foreground">
-              Schedules
+              Work schedule
             </h2>
             {selectedStaff && (
               <p className="mt-2 text-sm text-(--muted)">
-                {selectedStaff.fullName} · {selectedDate}
+                {selectedStaff.fullName} · {weekDays[0].date} to{" "}
+                {weekDays[6].date}
               </p>
             )}
           </div>
@@ -344,47 +394,76 @@ function AdminSchedulesPageContent() {
           ) : schedules.length === 0 ? (
             <div className="mt-6 rounded-xl border border-dashed border-gray-300 px-6 py-12 text-center">
               <p className="font-semibold text-foreground">
-                No schedules for this date
+                No schedules this week
               </p>
               <p className="mt-1 text-sm text-(--muted)">
-                Create a working window to make this day bookable.
+                Create a working window to make a day bookable.
               </p>
             </div>
           ) : (
-            <div className="mt-6 space-y-3">
-              {schedules.map((schedule) => (
-                <div
-                  key={schedule.id}
-                  className="flex flex-col justify-between gap-4 rounded-xl border border-(--border) bg-gray-50/60 p-4 sm:flex-row sm:items-center"
-                >
-                  <div>
-                    <p className="text-lg font-bold text-foreground">
-                      {schedule.startTime.slice(0, 5)}{" "}
-                      <span className="font-normal text-gray-400">to</span>{" "}
-                      {schedule.endTime.slice(0, 5)}
-                    </p>
-                    <p className="mt-1 text-sm text-(--muted)">
-                      {schedule.workDate}
-                    </p>
+            <div className="mt-6 pb-2">
+              <div>
+                <div className="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] border-b border-(--border) pb-2 text-[10px] text-gray-400">
+                  <div />
+                  {weekDays.map((weekDay) => (
+                    <div key={weekDay.date} className="text-center">
+                      <p className="font-bold text-foreground">
+                        {weekDay.label}
+                      </p>
+                      <p className="mt-1">{weekDay.day}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-[40px_minmax(0,1fr)]">
+                  <div className="grid grid-rows-[repeat(24,40px)] border-r border-gray-100 text-[10px] text-gray-400">
+                    {hourLabels.map((hour) => (
+                      <div key={hour} className="pr-2 pt-1 text-right">
+                        {String(hour).padStart(2, "0")}:00
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(schedule)}
-                      className="rounded-lg border border-(--border) bg-white px-3 py-2 text-xs font-semibold text-foreground hover:bg-gray-50"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(schedule)}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
-                    >
-                      Delete
-                    </button>
+                  <div
+                    className="relative h-[960px] grid-cols-7 bg-[linear-gradient(to_bottom,#f3f4f6_1px,transparent_1px),linear-gradient(to_right,#f3f4f6_1px,transparent_1px)] bg-[length:100%_40px,calc(100%/7)_100%]"
+                    style={{ display: "grid" }}
+                  >
+                    {schedules.map((schedule) => {
+                      const dayIndex = weekDays.findIndex(
+                        (weekDay) => weekDay.date === schedule.workDate,
+                      );
+                      const start = timeToMinutes(schedule.startTime);
+                      const end = timeToMinutes(schedule.endTime);
+                      const duration = Math.max(end - start, 15);
+
+                      if (dayIndex < 0) {
+                        return null;
+                      }
+
+                      return (
+                        <button
+                          key={schedule.id}
+                          type="button"
+                          onClick={() => startEdit(schedule)}
+                          title={`${schedule.startTime.slice(0, 5)} - ${schedule.endTime.slice(0, 5)}`}
+                          className="absolute rounded-md border border-(--brand) bg-(--brand) px-2 py-1 text-left text-[10px] font-bold text-white shadow-sm transition hover:bg-(--brand-dark)"
+                          style={{
+                            left: `${(dayIndex / 7) * 100}%`,
+                            top: `${(start / 1440) * 100}%`,
+                            width: `${100 / 7}%`,
+                            height: `${(duration / 1440) * 100}%`,
+                          }}
+                        >
+                          <span className="block truncate">
+                            {schedule.startTime.slice(0, 5)}
+                          </span>
+                          <span className="block truncate font-normal">
+                            {schedule.endTime.slice(0, 5)}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              ))}
+              </div>
             </div>
           )}
         </section>

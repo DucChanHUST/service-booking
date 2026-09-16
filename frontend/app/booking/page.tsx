@@ -32,6 +32,10 @@ function timeToMinutes(time: string) {
   return hours * 60 + minutes;
 }
 
+function getTimelinePosition(minutes: number) {
+  return `${(Math.max(0, Math.min(minutes, 24 * 60)) / (24 * 60)) * 100}%`;
+}
+
 function isTimeAvailable(
   startTime: string,
   durationMinutes: number,
@@ -163,6 +167,9 @@ function BookingPageContent() {
 
     return calculateEndTime(startTime, service.durationMinutes);
   }, [service, startTime]);
+
+  const selectedStartMinutes = startTime ? timeToMinutes(startTime) : null;
+  const selectedEndMinutes = endTime ? timeToMinutes(endTime) : null;
 
   async function handleSubmit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -329,7 +336,7 @@ function BookingPageContent() {
                   Price
                 </p>
                 <p className="mt-2 font-semibold text-foreground">
-                  ${service.price.toFixed(2)}
+                  {service.price.toLocaleString("vi-VN")}₫
                 </p>
               </div>
             </div>
@@ -459,18 +466,74 @@ function BookingPageContent() {
                     </p>
                   ) : (
                     <div>
-                      <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">
-                        Available ranges
-                      </p>
-                      <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                          Availability timeline
+                        </p>
+                        <div className="flex shrink-0 items-center gap-3 text-[11px] text-(--muted)">
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-2.5 w-2.5 rounded-sm bg-gray-300" />
+                            Unavailable
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
+                            Available
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-2.5 w-2.5 rounded-sm bg-red-500" />
+                            Selected
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-gray-200">
+                        <div className="relative h-16 bg-[linear-gradient(to_right,rgba(255,255,255,0.65)_1px,transparent_1px)] bg-[length:calc(100%/12)_100%]">
+                          {availability.availableRanges.map((range, index) => {
+                            const rangeStart = timeToMinutes(range.startTime);
+                            const rangeEnd = timeToMinutes(range.endTime);
+
+                            return (
+                              <div
+                                key={index}
+                                className="absolute inset-y-0 bg-emerald-500/85"
+                                style={{
+                                  left: getTimelinePosition(rangeStart),
+                                  width: `${(Math.max(0, rangeEnd - rangeStart) / (24 * 60)) * 100}%`,
+                                }}
+                                title={`${range.startTime.slice(0, 5)} - ${range.endTime.slice(0, 5)} available`}
+                              />
+                            );
+                          })}
+
+                          {selectedStartMinutes !== null &&
+                            selectedEndMinutes !== null && (
+                              <div
+                                className="absolute inset-y-0 z-10 border-2 border-red-600 bg-red-500/75 shadow-sm"
+                                style={{
+                                  left: getTimelinePosition(
+                                    selectedStartMinutes,
+                                  ),
+                                  width: `${(Math.max(0, Math.min(selectedEndMinutes, 24 * 60) - Math.max(selectedStartMinutes, 0)) / (24 * 60)) * 100}%`,
+                                }}
+                                title={`Selected service: ${startTime} - ${endTime}`}
+                              />
+                            )}
+                        </div>
+                        <div className="flex justify-between px-1 py-1 text-[10px] text-gray-500">
+                          <span>00:00</span>
+                          <span>06:00</span>
+                          <span>12:00</span>
+                          <span>18:00</span>
+                          <span>24:00</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 space-y-1 text-xs text-(--muted)">
                         {availability.availableRanges.map((range, index) => (
-                          <div
-                            key={index}
-                            className="rounded-lg border border-[#d7e9e4] bg-white px-3 py-2.5 text-sm font-semibold text-(--brand-dark)"
-                          >
-                            {range.startTime.slice(0, 5)} -{" "}
+                          <p key={index}>
+                            Available: {range.startTime.slice(0, 5)} -{" "}
                             {range.endTime.slice(0, 5)}
-                          </div>
+                          </p>
                         ))}
                       </div>
                     </div>
