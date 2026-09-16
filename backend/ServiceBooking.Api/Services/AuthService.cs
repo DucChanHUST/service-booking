@@ -8,18 +8,12 @@ using ServiceBooking.Api.DTOs.Auth;
 
 namespace ServiceBooking.Api.Services;
 
-public class AuthService
+public class AuthService(
+    AppDbContext dbContext,
+    IConfiguration configuration)
 {
-  private readonly AppDbContext _dbContext;
-  private readonly IConfiguration _configuration;
-
-  public AuthService(
-      AppDbContext dbContext,
-      IConfiguration configuration)
-  {
-    _dbContext = dbContext;
-    _configuration = configuration;
-  }
+  private readonly AppDbContext _dbContext = dbContext;
+  private readonly IConfiguration _configuration = configuration;
 
   public async Task<LoginResponse?> LoginAsync(
       LoginRequest request)

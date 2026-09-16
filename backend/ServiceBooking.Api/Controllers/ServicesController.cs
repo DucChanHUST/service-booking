@@ -7,15 +7,10 @@ namespace ServiceBooking.Api.Controllers;
 
 [ApiController]
 [Route("api/services")]
-public class ServicesController : ControllerBase
+public class ServicesController(
+    ServiceManagementService serviceManagementService) : ControllerBase
 {
-  private readonly ServiceManagementService _serviceManagementService;
-
-  public ServicesController(
-      ServiceManagementService serviceManagementService)
-  {
-    _serviceManagementService = serviceManagementService;
-  }
+  private readonly ServiceManagementService _serviceManagementService = serviceManagementService;
 
   [AllowAnonymous]
   [HttpGet]
@@ -36,8 +31,7 @@ public class ServicesController : ControllerBase
       page,
       pageSize,
       totalCount,
-      totalPages = (int)Math.Ceiling(
-            totalCount / (double)pageSize)
+      totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
     });
   }
 

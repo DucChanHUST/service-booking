@@ -5,14 +5,9 @@ using ServiceBooking.Api.Entities;
 
 namespace ServiceBooking.Api.Services;
 
-public class StaffManagementService
+public class StaffManagementService(AppDbContext dbContext)
 {
-  private readonly AppDbContext _dbContext;
-
-  public StaffManagementService(AppDbContext dbContext)
-  {
-    _dbContext = dbContext;
-  }
+  private readonly AppDbContext _dbContext = dbContext;
 
   public async Task<List<StaffResponse>> GetStaffsAsync()
   {

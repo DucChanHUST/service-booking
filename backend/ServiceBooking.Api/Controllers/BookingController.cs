@@ -9,15 +9,10 @@ namespace ServiceBooking.Api.Controllers;
 
 [ApiController]
 [Route("api/bookings")]
-public class BookingsController : ControllerBase
+public class BookingsController(
+    BookingService bookingService) : ControllerBase
 {
-  private readonly BookingService _bookingService;
-
-  public BookingsController(
-      BookingService bookingService)
-  {
-    _bookingService = bookingService;
-  }
+  private readonly BookingService _bookingService = bookingService;
 
   [AllowAnonymous]
   [HttpGet("available-slots")]
@@ -93,17 +88,30 @@ public class BookingsController : ControllerBase
   }
 
   [Authorize(Roles = "Customer")]
-  [HttpGet("my")]
-  public async Task<ActionResult<List<BookingResponse>>>
-      GetMyBookings()
+  [HttpGet("my-bookings")]
+  public async Task<ActionResult<List<BookingResponse>>> GetMyBookings(
+    [FromQuery] BookingStatus? status,
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 10
+  )
   {
     var customerId = GetCurrentUserId();
 
-    var result =
+    var (items, totalCount) =
       await _bookingService.GetMyBookingsAsync(
-        customerId);
+        customerId,
+        status,
+        page,
+        pageSize);
 
-    return Ok(result);
+    return Ok(new
+    {
+      items,
+      page,
+      pageSize,
+      totalCount,
+      totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+    });
   }
 
 
@@ -146,13 +154,30 @@ public class BookingsController : ControllerBase
 
   [Authorize(Roles = "Admin")]
   [HttpGet]
-  public async Task<ActionResult<List<BookingResponse>>>
-      GetAll()
+  public async Task<ActionResult> GetAll(
+      [FromQuery] DateOnly? date,
+      [FromQuery] BookingStatus? status,
+      [FromQuery] int page = 1,
+      [FromQuery] int pageSize = 10)
   {
-    var result =
-        await _bookingService.GetAllAsync();
+    page = Math.Max(page, 1);
+    pageSize = Math.Clamp(pageSize, 1, 100);
 
-    return Ok(result);
+    var (items, totalCount) =
+      await _bookingService.GetAllAsync(
+        date,
+        status,
+        page,
+        pageSize);
+
+    return Ok(new
+    {
+      items,
+      page,
+      pageSize,
+      totalCount,
+      totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+    });
   }
 
 

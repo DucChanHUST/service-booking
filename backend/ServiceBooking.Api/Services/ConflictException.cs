@@ -1,9 +1,5 @@
 namespace ServiceBooking.Api.Services;
 
-public class ConflictException : Exception
+public class ConflictException(string message) : Exception(message)
 {
-  public ConflictException(string message)
-    : base(message)
-  {
-  }
 }

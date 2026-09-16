@@ -5,14 +5,9 @@ using ServiceBooking.Api.Entities;
 
 namespace ServiceBooking.Api.Services;
 
-public class ScheduleManagementService
+public class ScheduleManagementService(AppDbContext dbContext)
 {
-  private readonly AppDbContext _dbContext;
-
-  public ScheduleManagementService(AppDbContext dbContext)
-  {
-    _dbContext = dbContext;
-  }
+  private readonly AppDbContext _dbContext = dbContext;
 
   public async Task<List<ScheduleResponse>> GetSchedulesAsync(
     Guid? staffId,
@@ -58,14 +53,15 @@ public class ScheduleManagementService
   }
 
   public async Task<ScheduleResponse> CreateAsync(
-      CreateScheduleRequest request)
+    Guid staffId,  
+    CreateScheduleRequest request)
   {
     ValidateTime(
       request.StartTime,
       request.EndTime);
 
     var staff = await _dbContext.Staffs
-      .FirstOrDefaultAsync(x => x.Id == request.StaffId);
+      .FirstOrDefaultAsync(x => x.Id == staffId);
 
     if (staff is null)
       throw new KeyNotFoundException("Staff not found.");
@@ -75,7 +71,7 @@ public class ScheduleManagementService
 
     var overlaps = await _dbContext.WorkSchedules
       .AnyAsync(x =>
-        x.StaffId == request.StaffId &&
+        x.StaffId == staffId &&
         x.WorkDate == request.WorkDate &&
         request.StartTime < x.EndTime &&
         request.EndTime > x.StartTime);
@@ -86,7 +82,7 @@ public class ScheduleManagementService
     var schedule = new WorkSchedule
     {
       Id = Guid.NewGuid(),
-      StaffId = request.StaffId,
+      StaffId = staffId,
       WorkDate = request.WorkDate,
       StartTime = request.StartTime,
       EndTime = request.EndTime

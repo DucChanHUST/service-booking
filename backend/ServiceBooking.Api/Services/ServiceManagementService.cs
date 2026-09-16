@@ -5,14 +5,9 @@ using ServiceBooking.Api.Entities;
 
 namespace ServiceBooking.Api.Services;
 
-public class ServiceManagementService
+public class ServiceManagementService(AppDbContext dbContext)
 {
-  private readonly AppDbContext _dbContext;
-
-  public ServiceManagementService(AppDbContext dbContext)
-  {
-    _dbContext = dbContext;
-  }
+  private readonly AppDbContext _dbContext = dbContext;
 
   public async Task<(List<ServiceResponse> Items, int TotalCount)> GetServicesAsync(
       string? search,

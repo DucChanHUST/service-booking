@@ -6,18 +6,9 @@ using ServiceBooking.Api.Enums;
 
 namespace ServiceBooking.Api.Services;
 
-public class BookingService
+public class BookingService(AppDbContext dbContext)
 {
-  private readonly AppDbContext _dbContext;
-
-  public BookingService(AppDbContext dbContext)
-  {
-    _dbContext = dbContext;
-  }
-
-  // ============================================================
-  // AVAILABLE SLOTS
-  // ============================================================
+  private readonly AppDbContext _dbContext = dbContext;
 
   public async Task<AvailableSlotsResponse> GetAvailableSlotsAsync(
       Guid serviceId,
@@ -77,13 +68,6 @@ public class BookingService
       return response;
     }
 
-    // --------------------------------------------------------
-    // Get all schedules for this staff on this date.
-    // This supports multiple shifts, e.g.
-    // 08:00 - 12:00
-    // 13:30 - 18:00
-    // --------------------------------------------------------
-
     var schedules = await _dbContext.WorkSchedules
         .AsNoTracking()
         .Where(x =>
@@ -115,10 +99,6 @@ public class BookingService
     var dayStartUtc = LocalToUtc(localDayStart);
     var dayEndUtc = LocalToUtc(localDayEnd);
 
-    // --------------------------------------------------------
-    // Get all non-cancelled bookings that intersect this date.
-    // --------------------------------------------------------
-
     var bookings = await _dbContext.Bookings
         .AsNoTracking()
         .Where(x =>
@@ -128,10 +108,6 @@ public class BookingService
             x.EndTime > dayStartUtc)
         .OrderBy(x => x.StartTime)
         .ToListAsync();
-
-    // --------------------------------------------------------
-    // Calculate available ranges for every work schedule.
-    // --------------------------------------------------------
 
     foreach (var schedule in schedules)
     {
@@ -187,10 +163,6 @@ public class BookingService
           continue;
         }
 
-        // ------------------------------------------------
-        // Free time before this booking.
-        // ------------------------------------------------
-
         if (current < bookingStart)
         {
           var freeEnd =
@@ -218,10 +190,6 @@ public class BookingService
         }
       }
 
-      // ----------------------------------------------------
-      // Free time after the last booking.
-      // ----------------------------------------------------
-
       if (current < rangeEnd)
       {
         AddAvailableRange(
@@ -236,18 +204,10 @@ public class BookingService
     return response;
   }
 
-  // ============================================================
-  // CREATE BOOKING
-  // ============================================================
-
   public async Task<BookingResponse> CreateAsync(
       Guid customerId,
       CreateBookingRequest request)
   {
-    // --------------------------------------------------------
-    // Validate service
-    // --------------------------------------------------------
-
     var service = await _dbContext.Services
         .FirstOrDefaultAsync(x =>
             x.Id == request.ServiceId);
@@ -265,10 +225,6 @@ public class BookingService
           "Service is inactive."
       );
     }
-
-    // --------------------------------------------------------
-    // Validate staff
-    // --------------------------------------------------------
 
     var staff = await _dbContext.Staffs
         .FirstOrDefaultAsync(x =>
@@ -320,10 +276,6 @@ public class BookingService
       );
     }
 
-    // --------------------------------------------------------
-    // Past booking validation
-    // --------------------------------------------------------
-
     if (localStartTime <= DateTime.Now)
     {
       throw new ArgumentException(
@@ -331,17 +283,9 @@ public class BookingService
       );
     }
 
-    // --------------------------------------------------------
-    // Calculate local end time.
-    // --------------------------------------------------------
-
     var localEndTime = localStartTime.AddMinutes(
         service.DurationMinutes
     );
-
-    // --------------------------------------------------------
-    // Extract local date/time for WorkSchedule validation.
-    // --------------------------------------------------------
 
     var workDate = DateOnly.FromDateTime(
         localStartTime
@@ -354,20 +298,6 @@ public class BookingService
     var localEndOnly = TimeOnly.FromDateTime(
         localEndTime
     );
-
-    // --------------------------------------------------------
-    // Validate working schedule.
-    //
-    // Booking must be completely inside ONE schedule.
-    //
-    // Example:
-    //
-    // Schedule: 08:00 - 12:00
-    // Booking:  09:30 - 10:30   -> valid
-    //
-    // Schedule: 08:00 - 12:00
-    // Booking:  11:30 - 12:30   -> invalid
-    // --------------------------------------------------------
 
     var schedule = await _dbContext.WorkSchedules
         .AsNoTracking()
@@ -385,25 +315,8 @@ public class BookingService
       );
     }
 
-    // ========================================================
-    // Convert LOCAL -> UTC only after all local business
-    // time validations have passed.
-    // ========================================================
-
     var startTimeUtc = LocalToUtc(localStartTime);
     var endTimeUtc = LocalToUtc(localEndTime);
-
-    // --------------------------------------------------------
-    // Check overlapping bookings.
-    //
-    // Cancelled bookings do NOT block the time.
-    //
-    // Overlap:
-    //
-    // NewStart < ExistingEnd
-    // AND
-    // NewEnd > ExistingStart
-    // --------------------------------------------------------
 
     var hasConflict = await _dbContext.Bookings
         .AnyAsync(x =>
@@ -419,11 +332,6 @@ public class BookingService
           "The selected time conflicts with an existing booking."
       );
     }
-
-    // --------------------------------------------------------
-    // Create booking
-    // --------------------------------------------------------
-
     var booking = new Booking
     {
       Id = Guid.NewGuid(),
@@ -454,49 +362,60 @@ public class BookingService
     );
   }
 
-  // ============================================================
-  // CUSTOMER - MY BOOKINGS
-  // ============================================================
-
-  public async Task<List<BookingResponse>> GetMyBookingsAsync(
-      Guid customerId)
+  public async Task<(List<BookingResponse> Items, int TotalCount)> GetMyBookingsAsync(
+      Guid customerId,
+      BookingStatus? status,
+      int page,
+      int pageSize)
   {
-    return await _dbContext.Bookings
+    page = Math.Max(page, 1);
+    pageSize = Math.Clamp(pageSize, 1, 100);
+
+    var query = _dbContext.Bookings
         .AsNoTracking()
-        .Where(x =>
-            x.CustomerId == customerId)
-        .OrderByDescending(x => x.StartTime)
-        .Select(x => new BookingResponse
-        {
-          Id = x.Id,
-          BookingCode = x.BookingCode,
+        .Where(x => x.CustomerId == customerId);
 
-          CustomerId = x.CustomerId,
-          CustomerEmail = x.Customer.Email,
+    if (status.HasValue)
+    {
+      query = query.Where(x => x.Status == status.Value);
+    }
 
-          ServiceId = x.ServiceId,
-          ServiceName = x.Service.Name,
+    var totalCount = await query.CountAsync();
 
-          StaffId = x.StaffId,
-          StaffName = x.Staff.FullName,
+    var items = await query
+      .Where(x => x.CustomerId == customerId)
+      .OrderBy(x => x.CreatedAt)
+      .Skip((page - 1) * pageSize)
+      .Take(pageSize)
+      .Select(x => new BookingResponse
+      {
+        Id = x.Id,
+        BookingCode = x.BookingCode,
 
-          StartTime = x.StartTime,
-          EndTime = x.EndTime,
+        CustomerId = x.CustomerId,
+        CustomerEmail = x.Customer.Email,
 
-          Status = x.Status,
+        ServiceId = x.ServiceId,
+        ServiceName = x.Service.Name,
 
-          CustomerNote = x.CustomerNote,
-          CancellationReason =
-                x.CancellationReason,
+        StaffId = x.StaffId,
+        StaffName = x.Staff.FullName,
 
-          CreatedAt = x.CreatedAt
-        })
-        .ToListAsync();
+        StartTime = x.StartTime,
+        EndTime = x.EndTime,
+
+        Status = x.Status,
+
+        CustomerNote = x.CustomerNote,
+        CancellationReason =
+        x.CancellationReason,
+
+        CreatedAt = x.CreatedAt
+      }).ToListAsync();
+
+
+    return (items, totalCount);
   }
-
-  // ============================================================
-  // CUSTOMER - CANCEL BOOKING
-  // ============================================================
 
   public async Task<BookingResponse?> CancelAsync(
       Guid customerId,
@@ -555,11 +474,42 @@ public class BookingService
     );
   }
 
-  public async Task<List<BookingResponse>> GetAllAsync()
+  public async Task<(List<BookingResponse> Items, int TotalCount)> GetAllAsync(
+      DateOnly? date,
+      BookingStatus? status,
+      int page,
+      int pageSize)
   {
-    return await _dbContext.Bookings
+    page = Math.Max(page, 1);
+    pageSize = Math.Clamp(pageSize, 1, 100);
+
+    var query = _dbContext.Bookings
         .AsNoTracking()
+        .AsQueryable();
+
+    if (date.HasValue)
+    {
+      var localDayStart = date.Value.ToDateTime(TimeOnly.MinValue);
+      var localDayEnd = date.Value.AddDays(1).ToDateTime(TimeOnly.MinValue);
+      var dayStartUtc = LocalToUtc(localDayStart);
+      var dayEndUtc = LocalToUtc(localDayEnd);
+
+      query = query.Where(x =>
+          x.StartTime < dayEndUtc &&
+          x.EndTime > dayStartUtc);
+    }
+
+    if (status.HasValue)
+    {
+      query = query.Where(x => x.Status == status.Value);
+    }
+
+    var totalCount = await query.CountAsync();
+
+    var items = await query
         .OrderByDescending(x => x.StartTime)
+        .Skip((page - 1) * pageSize)
+        .Take(pageSize)
         .Select(x => new BookingResponse
         {
           Id = x.Id,
@@ -586,6 +536,8 @@ public class BookingService
           CreatedAt = x.CreatedAt
         })
         .ToListAsync();
+
+    return (items, totalCount);
   }
 
   public async Task<BookingResponse?> UpdateStatusAsync(
@@ -614,10 +566,6 @@ public class BookingService
         booking.Id
     );
   }
-
-  // ============================================================
-  // HELPER - GET BOOKING RESPONSE
-  // ============================================================
 
   private async Task<BookingResponse> GetBookingResponseAsync(
       Guid bookingId)
@@ -655,10 +603,6 @@ public class BookingService
     return booking;
   }
 
-  // ============================================================
-  // HELPER - LOCAL -> UTC
-  // ============================================================
-
   private static DateTime LocalToUtc(
       DateTime localDateTime)
   {
@@ -673,10 +617,6 @@ public class BookingService
     );
   }
 
-  // ============================================================
-  // HELPER - UTC -> LOCAL
-  // ============================================================
-
   private static DateTime UtcToLocal(
       DateTime utcDateTime)
   {
@@ -690,10 +630,6 @@ public class BookingService
         TimeZoneInfo.Local
     );
   }
-
-  // ============================================================
-  // HELPER - ADD AVAILABLE RANGE
-  // ============================================================
 
   private static void AddAvailableRange(
       List<AvailableTimeRangeResponse> ranges,
@@ -711,8 +647,6 @@ public class BookingService
         start.ToTimeSpan())
       .TotalMinutes;
 
-    // Range must be long enough to contain
-    // at least one complete service.
     if (availableMinutes < durationMinutes)
     {
       return;
