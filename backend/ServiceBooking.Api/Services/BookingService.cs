@@ -189,166 +189,153 @@ public class BookingService(
       Guid customerId,
       CreateBookingRequest request)
   {
-    var service = await _dbContext.Services
-        .FirstOrDefaultAsync(x =>
-            x.Id == request.ServiceId);
+    await using var transaction =
+      await _dbContext.Database.BeginTransactionAsync();
 
-    if (service is null)
+    try
     {
-      throw new KeyNotFoundException(
-          "Service not found."
+      var lockKey = GetStaffLockKey(request.StaffId);
+
+      await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+        $"SELECT pg_advisory_xact_lock({lockKey})"
       );
-    }
 
-    if (!service.IsActive)
-    {
-      throw new ArgumentException(
-          "Service is inactive."
-      );
-    }
+      var service = await _dbContext.Services
+        .FirstOrDefaultAsync(x => x.Id == request.ServiceId);
 
-    var staff = await _dbContext.Staffs
-        .FirstOrDefaultAsync(x =>
-            x.Id == request.StaffId);
+      if (service is null)
+      {
+        throw new KeyNotFoundException("Service not found.");
+      }
 
-    if (staff is null)
-    {
-      throw new KeyNotFoundException(
-          "Staff not found."
-      );
-    }
+      if (!service.IsActive)
+      {
+        throw new ArgumentException("Service is inactive.");
+      }
 
-    if (!staff.IsActive)
-    {
-      throw new ArgumentException(
-          "Staff is inactive."
-      );
-    }
+      var staff = await _dbContext.Staffs
+        .FirstOrDefaultAsync(x => x.Id == request.StaffId);
 
-    // ========================================================
-    // IMPORTANT TIMEZONE LOGIC
-    //
-    // request.StartTime comes from frontend as local
-    // business time, e.g.
-    //
-    // 2026-09-16T09:30:00
-    //
-    // At this point we MUST NOT convert to UTC yet.
-    //
-    // First:
-    //   local time -> validate schedule
-    //
-    // Then:
-    //   local time -> UTC -> database
-    // ========================================================
+      if (staff is null)
+      {
+        throw new KeyNotFoundException("Staff not found.");
+      }
 
-    var localStartTime = request.StartTime;
+      if (!staff.IsActive)
+      {
+        throw new ArgumentException("Staff is inactive.");
+      }
 
-    if (localStartTime.Kind == DateTimeKind.Utc)
-    {
-      localStartTime =
-          localStartTime.ToLocalTime();
-    }
-    else
-    {
-      localStartTime = DateTime.SpecifyKind(
-          localStartTime,
-          DateTimeKind.Unspecified
-      );
-    }
+      // ========================================================
+      // IMPORTANT TIMEZONE LOGIC
+      //
+      // request.StartTime comes from frontend as local
+      // business time, e.g.
+      //
+      // 2026-09-16T09:30:00
+      //
+      // At this point we MUST NOT convert to UTC yet.
+      //
+      // First:
+      //   local time -> validate schedule
+      //
+      // Then:
+      //   local time -> UTC -> database
+      // ========================================================
 
-    if (localStartTime <= DateTime.Now)
-    {
-      throw new ArgumentException(
-          "Booking time cannot be in the past."
-      );
-    }
+      var localStartTime = request.StartTime;
 
-    var localEndTime = localStartTime.AddMinutes(
-        service.DurationMinutes
-    );
+      if (localStartTime.Kind == DateTimeKind.Utc)
+      {
+        localStartTime = localStartTime.ToLocalTime();
+      }
+      else
+      {
+        localStartTime = DateTime.SpecifyKind(
+          localStartTime, DateTimeKind.Unspecified
+        );
+      }
 
-    var workDate = DateOnly.FromDateTime(
-        localStartTime
-    );
+      if (localStartTime <= DateTime.Now)
+      {
+        throw new ArgumentException("Booking time cannot be in the past.");
+      }
 
-    var localStartOnly = TimeOnly.FromDateTime(
-        localStartTime
-    );
+      var localEndTime = localStartTime.AddMinutes(service.DurationMinutes);
+      var workDate = DateOnly.FromDateTime(localStartTime);
+      var localStartOnly = TimeOnly.FromDateTime(localStartTime);
+      var localEndOnly = TimeOnly.FromDateTime(localEndTime);
 
-    var localEndOnly = TimeOnly.FromDateTime(
-        localEndTime
-    );
-
-    var schedule = await _dbContext.WorkSchedules
+      var schedule = await _dbContext.WorkSchedules
         .AsNoTracking()
         .FirstOrDefaultAsync(x =>
-            x.StaffId == request.StaffId &&
-            x.WorkDate == workDate &&
-            x.StartTime <= localStartOnly &&
-            x.EndTime >= localEndOnly
+          x.StaffId == request.StaffId &&
+          x.WorkDate == workDate &&
+          x.StartTime <= localStartOnly &&
+          x.EndTime >= localEndOnly
         );
 
-    if (schedule is null)
-    {
-      throw new ArgumentException(
+      if (schedule is null)
+      {
+        throw new ArgumentException(
           "Booking time is outside staff working hours."
-      );
-    }
+        );
+      }
 
-    var startTimeUtc = LocalToUtc(localStartTime);
-    var endTimeUtc = LocalToUtc(localEndTime);
+      var startTimeUtc = LocalToUtc(localStartTime);
+      var endTimeUtc = LocalToUtc(localEndTime);
 
-    var hasConflict = await _dbContext.Bookings
+      var hasConflict = await _dbContext.Bookings
         .AnyAsync(x =>
-            x.StaffId == request.StaffId &&
-            x.Status != BookingStatus.Cancelled &&
-            startTimeUtc < x.EndTime &&
-            endTimeUtc > x.StartTime
+          x.StaffId == request.StaffId &&
+          x.Status != BookingStatus.Cancelled &&
+          startTimeUtc < x.EndTime &&
+          endTimeUtc > x.StartTime
         );
 
-    if (hasConflict)
-    {
-      throw new ConflictException(
+      if (hasConflict)
+      {
+        throw new ConflictException(
           "The selected time conflicts with an existing booking."
-      );
+        );
+      }
+      var booking = new Booking
+      {
+        Id = Guid.NewGuid(),
+        BookingCode = GenerateBookingCode(),
+        CustomerId = customerId,
+        ServiceId = service.Id,
+        StaffId = staff.Id,
+        StartTime = startTimeUtc,
+        EndTime = endTimeUtc,
+        Status = BookingStatus.Pending,
+        CustomerNote = request.CustomerNote?.Trim(),
+        CreatedAt = DateTime.UtcNow
+      };
+
+      _dbContext.Bookings.Add(booking);
+
+      await _dbContext.SaveChangesAsync();
+
+      await transaction.CommitAsync();
+
+      var response = await GetBookingResponseAsync(booking.Id);
+
+      await _hubContext.Clients
+        .Group(BookingHub.AdminGroup)
+        .SendAsync("BookingCreated", response);
+
+      await _hubContext.Clients
+        .Group(BookingHub.CustomerGroup(customerId))
+        .SendAsync("BookingCreated", response);
+
+      return response;
     }
-    var booking = new Booking
+    catch
     {
-      Id = Guid.NewGuid(),
-
-      BookingCode = GenerateBookingCode(),
-
-      CustomerId = customerId,
-      ServiceId = service.Id,
-      StaffId = staff.Id,
-
-      StartTime = startTimeUtc,
-      EndTime = endTimeUtc,
-
-      Status = BookingStatus.Pending,
-
-      CustomerNote =
-            request.CustomerNote?.Trim(),
-
-      CreatedAt = DateTime.UtcNow
-    };
-
-    _dbContext.Bookings.Add(booking);
-
-    await _dbContext.SaveChangesAsync();
-
-    var response = await GetBookingResponseAsync(booking.Id);
-
-    await _hubContext.Clients
-      .Group(BookingHub.AdminGroup)
-      .SendAsync("BookingCreated", response);
-
-    await _hubContext.Clients
-      .Group(BookingHub.CustomerGroup(customerId))
-      .SendAsync("BookingCreated", response);
-
-    return response;
+      await transaction.RollbackAsync();
+      throw;
+    }
   }
 
   public async Task<(List<BookingResponse> Items, int TotalCount)> GetMyBookingsAsync(
@@ -430,16 +417,12 @@ public class BookingService(
 
     if (booking.Status == BookingStatus.Completed)
     {
-      throw new ArgumentException(
-          "Completed booking cannot be cancelled."
-      );
+      throw new ArgumentException("Completed booking cannot be cancelled.");
     }
 
     if (booking.Status == BookingStatus.Cancelled)
     {
-      throw new ArgumentException(
-          "Booking is already cancelled."
-      );
+      throw new ArgumentException("Booking is already cancelled.");
     }
 
     // booking.StartTime is stored as UTC.
@@ -471,17 +454,17 @@ public class BookingService(
   }
 
   public async Task<(List<BookingResponse> Items, int TotalCount)> GetAllAsync(
-      DateOnly? date,
-      BookingStatus? status,
-      int page,
-      int pageSize)
+    DateOnly? date,
+    BookingStatus? status,
+    int page,
+    int pageSize)
   {
     page = Math.Max(page, 1);
     pageSize = Math.Clamp(pageSize, 1, 100);
 
     var query = _dbContext.Bookings
-        .AsNoTracking()
-        .AsQueryable();
+      .AsNoTracking()
+      .AsQueryable();
 
     if (date.HasValue)
     {
@@ -491,8 +474,8 @@ public class BookingService(
       var dayEndUtc = LocalToUtc(localDayEnd);
 
       query = query.Where(x =>
-          x.StartTime < dayEndUtc &&
-          x.EndTime > dayStartUtc);
+        x.StartTime < dayEndUtc &&
+        x.EndTime > dayStartUtc);
     }
 
     if (status.HasValue)
@@ -503,35 +486,28 @@ public class BookingService(
     var totalCount = await query.CountAsync();
 
     var items = await query
-        .OrderByDescending(x => x.StartTime)
-        .Skip((page - 1) * pageSize)
-        .Take(pageSize)
-        .Select(x => new BookingResponse
-        {
-          Id = x.Id,
-          BookingCode = x.BookingCode,
+      .OrderByDescending(x => x.StartTime)
+      .Skip((page - 1) * pageSize)
+      .Take(pageSize)
+      .Select(x => new BookingResponse
+      {
+        Id = x.Id,
+        BookingCode = x.BookingCode,
+        CustomerId = x.CustomerId,
+        CustomerEmail = x.Customer.Email,
+        ServiceId = x.ServiceId,
+        ServiceName = x.Service.Name,
+        StaffId = x.StaffId,
+        StaffName = x.Staff.FullName,
+        StartTime = x.StartTime,
+        EndTime = x.EndTime,
+        Status = x.Status,
+        CustomerNote = x.CustomerNote,
+        CancellationReason = x.CancellationReason,
 
-          CustomerId = x.CustomerId,
-          CustomerEmail = x.Customer.Email,
-
-          ServiceId = x.ServiceId,
-          ServiceName = x.Service.Name,
-
-          StaffId = x.StaffId,
-          StaffName = x.Staff.FullName,
-
-          StartTime = x.StartTime,
-          EndTime = x.EndTime,
-
-          Status = x.Status,
-
-          CustomerNote = x.CustomerNote,
-          CancellationReason =
-                x.CancellationReason,
-
-          CreatedAt = x.CreatedAt
-        })
-        .ToListAsync();
+        CreatedAt = x.CreatedAt
+      })
+      .ToListAsync();
 
     return (items, totalCount);
   }
@@ -541,8 +517,8 @@ public class BookingService(
       BookingStatus status)
   {
     var booking = await _dbContext.Bookings
-        .FirstOrDefaultAsync(x =>
-            x.Id == bookingId);
+      .FirstOrDefaultAsync(x =>
+        x.Id == bookingId);
 
     if (booking is null)
     {
@@ -607,8 +583,7 @@ public class BookingService(
     return booking;
   }
 
-  private static DateTime LocalToUtc(
-      DateTime localDateTime)
+  private static DateTime LocalToUtc(DateTime localDateTime)
   {
     var unspecified = DateTime.SpecifyKind(
         localDateTime,
@@ -616,13 +591,12 @@ public class BookingService(
     );
 
     return TimeZoneInfo.ConvertTimeToUtc(
-        unspecified,
-        TimeZoneInfo.Local
+      unspecified,
+      TimeZoneInfo.Local
     );
   }
 
-  private static DateTime UtcToLocal(
-      DateTime utcDateTime)
+  private static DateTime UtcToLocal(DateTime utcDateTime)
   {
     var utc = DateTime.SpecifyKind(
         utcDateTime,
@@ -630,16 +604,16 @@ public class BookingService(
     );
 
     return TimeZoneInfo.ConvertTimeFromUtc(
-        utc,
-        TimeZoneInfo.Local
+      utc,
+      TimeZoneInfo.Local
     );
   }
 
   private static void AddAvailableRange(
-      List<AvailableTimeRangeResponse> ranges,
-      TimeOnly start,
-      TimeOnly end,
-      int durationMinutes)
+    List<AvailableTimeRangeResponse> ranges,
+    TimeOnly start,
+    TimeOnly end,
+    int durationMinutes)
   {
     if (start >= end)
     {
@@ -668,7 +642,7 @@ public class BookingService(
   private static string GenerateBookingCode()
   {
     return
-        $"BK-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}";
+      $"BK-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}";
   }
 
   private static bool IsValidStatusTransition(
@@ -723,5 +697,10 @@ public class BookingService(
     await _hubContext.Clients
       .Group(BookingHub.CustomerGroup(booking.CustomerId))
       .SendAsync("BookingStatusUpdated", response);
+  }
+
+  private static long GetStaffLockKey(Guid staffId)
+  {
+    return BitConverter.ToInt64(staffId.ToByteArray(), 0);
   }
 }
