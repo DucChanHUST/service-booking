@@ -23,10 +23,47 @@ interface BookingListResponse {
   totalPages: number;
 }
 
+type BookingView = "list" | "week";
+
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("vi-VN", {
     dateStyle: "medium",
     timeStyle: "short",
+  });
+}
+
+function formatDateKey(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getWeekDays(value: Date) {
+  const date = new Date(value);
+  const dayOfWeek = date.getDay();
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  date.setDate(date.getDate() + mondayOffset);
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const weekDay = new Date(date);
+    weekDay.setDate(date.getDate() + index);
+
+    return {
+      date: formatDateKey(weekDay),
+      label: weekDay.toLocaleDateString("en-US", { weekday: "short" }),
+      day: weekDay.getDate(),
+      month: weekDay.toLocaleDateString("en-US", { month: "short" }),
+    };
+  });
+}
+
+function formatTime(value: string) {
+  return new Date(value).toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -67,6 +104,8 @@ function AdminBookingPageContent() {
 
   const [date, setDate] = useState("");
   const [status, setStatus] = useState<BookingStatus | "">("");
+  const [view, setView] = useState<BookingView>("list");
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -76,38 +115,58 @@ function AdminBookingPageContent() {
 
   const [error, setError] = useState("");
 
-  async function loadBookings(
-    requestedPage = page,
-    requestedDate = date,
-    requestedStatus = status,
-  ) {
-    try {
-      setLoading(true);
-      setError("");
+  const weekDays = getWeekDays(calendarDate);
 
-      const result = await api.get<BookingListResponse>(
-        apiRoutes.bookings.list({
-          page: requestedPage,
-          pageSize: 10,
-          date: requestedDate || undefined,
-          status: requestedStatus || undefined,
-        }),
-      );
+  const loadBookings = useCallback(
+    async function loadBookings(
+      requestedPage = page,
+      requestedDate = date,
+      requestedStatus = status,
+      requestedView = view,
+      requestedCalendarDate = calendarDate,
+    ) {
+      try {
+        setLoading(true);
+        setError("");
 
-      setBookings(result.items);
-      setPage(result.page);
-      setTotalPages(result.totalPages);
-      setTotalCount(result.totalCount);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load bookings.");
-    } finally {
-      setLoading(false);
-    }
-  }
+        const requestedWeekDays = getWeekDays(requestedCalendarDate);
+
+        const result = await api.get<BookingListResponse>(
+          apiRoutes.bookings.list({
+            page: requestedPage,
+            pageSize: requestedView === "week" ? 100 : 10,
+            date:
+              requestedView === "list" ? requestedDate || undefined : undefined,
+            from:
+              requestedView === "week" ? requestedWeekDays[0].date : undefined,
+            to:
+              requestedView === "week" ? requestedWeekDays[6].date : undefined,
+            status: requestedStatus || undefined,
+          }),
+        );
+
+        setBookings(result.items);
+        setPage(result.page);
+        setTotalPages(result.totalPages);
+        setTotalCount(result.totalCount);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to load bookings.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [page, date, status, view, calendarDate],
+  );
 
   useEffect(() => {
-    loadBookings();
-  }, [page]);
+    const timeoutId = window.setTimeout(() => {
+      void loadBookings();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loadBookings]);
 
   function applyFilters() {
     setPage(1);
@@ -121,8 +180,31 @@ function AdminBookingPageContent() {
     loadBookings(1, "", "");
   }
 
+  function changeView(nextView: BookingView) {
+    setView(nextView);
+    setPage(1);
+  }
+
+  function moveCalendarWeek(offset: number) {
+    setCalendarDate((current) => {
+      const next = new Date(current);
+      next.setDate(next.getDate() + offset * 7);
+
+      return next;
+    });
+    setPage(1);
+  }
+
   function goToPage(nextPage: number) {
     setPage(Math.min(Math.max(nextPage, 1), totalPages));
+  }
+
+  function getBookingsForDay(dateKey: string) {
+    return bookings
+      .filter(
+        (booking) => formatDateKey(new Date(booking.startTime)) === dateKey,
+      )
+      .sort((first, second) => first.startTime.localeCompare(second.startTime));
   }
 
   async function handleStatusChange(
@@ -260,6 +342,33 @@ function AdminBookingPageContent() {
         </div>
       </section>
 
+      <div className="mt-6 flex w-fit rounded-lg border border-gray-200 bg-white p-1">
+        <button
+          type="button"
+          onClick={() => changeView("list")}
+          aria-pressed={view === "list"}
+          className={`rounded-md px-4 py-2 text-sm font-semibold transition ${
+            view === "list"
+              ? "bg-(--brand) text-white"
+              : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+          }`}
+        >
+          List view
+        </button>
+        <button
+          type="button"
+          onClick={() => changeView("week")}
+          aria-pressed={view === "week"}
+          className={`rounded-md px-4 py-2 text-sm font-semibold transition ${
+            view === "week"
+              ? "bg-(--brand) text-white"
+              : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+          }`}
+        >
+          Week view
+        </button>
+      </div>
+
       {error && (
         <div
           className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
@@ -276,6 +385,96 @@ function AdminBookingPageContent() {
             <div className="h-14 animate-pulse rounded-xl bg-gray-100" />
             <div className="h-14 animate-pulse rounded-xl bg-gray-100" />
           </div>
+        ) : view === "week" ? (
+          <section className="overflow-x-auto">
+            <div className="mb-5 flex min-w-245 flex-col justify-between gap-3 border-b border-(--border) pb-5 sm:flex-row sm:items-center">
+              <div>
+                <h2 className="font-semibold text-foreground">
+                  Weekly calendar
+                </h2>
+                <p className="mt-1 text-sm text-(--muted)">
+                  {weekDays[0].date} to {weekDays[6].date}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => moveCalendarWeek(-1)}
+                  className="rounded-xl border border-(--border) px-3 py-2 text-sm font-semibold text-foreground hover:bg-gray-50"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCalendarDate(new Date());
+                    setPage(1);
+                  }}
+                  className="rounded-xl border border-(--border) px-3 py-2 text-sm font-semibold text-foreground hover:bg-gray-50"
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveCalendarWeek(1)}
+                  className="rounded-xl border border-(--border) px-3 py-2 text-sm font-semibold text-foreground hover:bg-gray-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+
+            <div className="grid min-w-245 grid-cols-7 divide-x divide-(--border)">
+              {weekDays.map((weekDay) => {
+                const dayBookings = getBookingsForDay(weekDay.date);
+
+                return (
+                  <div key={weekDay.date} className="min-h-72 bg-gray-50/40">
+                    <div className="border-b border-(--border) px-3 py-3 text-center">
+                      <p className="text-xs font-bold uppercase text-(--muted)">
+                        {weekDay.label}
+                      </p>
+                      <p className="mt-1 text-lg font-bold text-foreground">
+                        {weekDay.day}
+                      </p>
+                      <p className="text-xs text-gray-400">{weekDay.month}</p>
+                    </div>
+                    <div className="space-y-2 p-2">
+                      {dayBookings.map((booking) => (
+                        <article
+                          key={booking.id}
+                          className="rounded-lg border-l-4 border-(--brand) bg-white p-3 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-xs font-bold text-(--brand-dark)">
+                              {formatTime(booking.startTime)} -{" "}
+                              {formatTime(booking.endTime)}
+                            </p>
+                            <span
+                              className={`rounded-full px-2 py-1 text-[10px] font-bold ${getStatusClass(
+                                booking.status,
+                              )}`}
+                            >
+                              {booking.status}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm font-bold text-foreground">
+                            {booking.serviceName}
+                          </p>
+                          <p className="mt-1 text-xs text-(--muted)">
+                            {booking.customerEmail}
+                          </p>
+                          <p className="mt-1 text-xs text-(--muted)">
+                            Staff: {booking.staffName}
+                          </p>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
         ) : bookings.length === 0 ? (
           <div className="rounded-xl border border-dashed border-gray-300 px-6 py-14 text-center">
             <p className="font-semibold text-foreground">No bookings found</p>

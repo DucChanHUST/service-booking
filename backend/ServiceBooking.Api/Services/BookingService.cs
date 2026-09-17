@@ -341,6 +341,8 @@ public class BookingService(
   public async Task<(List<BookingResponse> Items, int TotalCount)> GetMyBookingsAsync(
       Guid customerId,
       BookingStatus? status,
+      DateOnly? from,
+      DateOnly? to,
       int page,
       int pageSize)
   {
@@ -354,6 +356,22 @@ public class BookingService(
     if (status.HasValue)
     {
       query = query.Where(x => x.Status == status.Value);
+    }
+
+    if (from.HasValue)
+    {
+      var fromUtc = LocalToUtc(
+        from.Value.ToDateTime(TimeOnly.MinValue));
+
+      query = query.Where(x => x.EndTime > fromUtc);
+    }
+
+    if (to.HasValue)
+    {
+      var toUtc = LocalToUtc(
+        to.Value.AddDays(1).ToDateTime(TimeOnly.MinValue));
+
+      query = query.Where(x => x.StartTime < toUtc);
     }
 
     var totalCount = await query.CountAsync();
@@ -455,6 +473,8 @@ public class BookingService(
 
   public async Task<(List<BookingResponse> Items, int TotalCount)> GetAllAsync(
     DateOnly? date,
+    DateOnly? from,
+    DateOnly? to,
     BookingStatus? status,
     int page,
     int pageSize)
@@ -476,6 +496,22 @@ public class BookingService(
       query = query.Where(x =>
         x.StartTime < dayEndUtc &&
         x.EndTime > dayStartUtc);
+    }
+
+    if (from.HasValue)
+    {
+      var fromUtc = LocalToUtc(
+        from.Value.ToDateTime(TimeOnly.MinValue));
+
+      query = query.Where(x => x.EndTime > fromUtc);
+    }
+
+    if (to.HasValue)
+    {
+      var toUtc = LocalToUtc(
+        to.Value.AddDays(1).ToDateTime(TimeOnly.MinValue));
+
+      query = query.Where(x => x.StartTime < toUtc);
     }
 
     if (status.HasValue)

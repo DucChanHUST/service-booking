@@ -91,6 +91,8 @@ public class BookingsController(
   [HttpGet("my-bookings")]
   public async Task<ActionResult<List<BookingResponse>>> GetMyBookings(
     [FromQuery] BookingStatus? status,
+    [FromQuery] DateOnly? from,
+    [FromQuery] DateOnly? to,
     [FromQuery] int page = 1,
     [FromQuery] int pageSize = 10
   )
@@ -101,6 +103,8 @@ public class BookingsController(
       await _bookingService.GetMyBookingsAsync(
         customerId,
         status,
+        from,
+        to,
         page,
         pageSize);
 
@@ -156,6 +160,8 @@ public class BookingsController(
   [HttpGet]
   public async Task<ActionResult> GetAll(
       [FromQuery] DateOnly? date,
+      [FromQuery] DateOnly? from,
+      [FromQuery] DateOnly? to,
       [FromQuery] BookingStatus? status,
       [FromQuery] int page = 1,
       [FromQuery] int pageSize = 10)
@@ -166,6 +172,8 @@ public class BookingsController(
     var (items, totalCount) =
       await _bookingService.GetAllAsync(
         date,
+        from,
+        to,
         status,
         page,
         pageSize);
