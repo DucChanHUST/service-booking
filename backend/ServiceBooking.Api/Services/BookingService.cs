@@ -3,12 +3,17 @@ using ServiceBooking.Api.Data;
 using ServiceBooking.Api.DTOs.Bookings;
 using ServiceBooking.Api.Entities;
 using ServiceBooking.Api.Enums;
+using Microsoft.AspNetCore.SignalR;
+using ServiceBooking.Api.Hubs;
 
 namespace ServiceBooking.Api.Services;
 
-public class BookingService(AppDbContext dbContext)
+public class BookingService(
+  AppDbContext dbContext,
+  IHubContext<BookingHub> hubContext)
 {
   private readonly AppDbContext _dbContext = dbContext;
+  private readonly IHubContext<BookingHub> _hubContext = hubContext;
 
   public async Task<AvailableSlotsResponse> GetAvailableSlotsAsync(
       Guid serviceId,
@@ -179,6 +184,7 @@ public class BookingService(AppDbContext dbContext)
 
     return response;
   }
+
   public async Task<BookingResponse> CreateAsync(
       Guid customerId,
       CreateBookingRequest request)
@@ -332,9 +338,17 @@ public class BookingService(AppDbContext dbContext)
 
     await _dbContext.SaveChangesAsync();
 
-    return await GetBookingResponseAsync(
-        booking.Id
-    );
+    var response = await GetBookingResponseAsync(booking.Id);
+
+    await _hubContext.Clients
+      .Group(BookingHub.AdminGroup)
+      .SendAsync("BookingCreated", response);
+
+    await _hubContext.Clients
+      .Group(BookingHub.CustomerGroup(customerId))
+      .SendAsync("BookingCreated", response);
+
+    return response;
   }
 
   public async Task<(List<BookingResponse> Items, int TotalCount)> GetMyBookingsAsync(
@@ -443,9 +457,17 @@ public class BookingService(AppDbContext dbContext)
 
     await _dbContext.SaveChangesAsync();
 
-    return await GetBookingResponseAsync(
-        booking.Id
-    );
+    var response = await GetBookingResponseAsync(booking.Id);
+
+    await _hubContext.Clients
+      .Group(BookingHub.AdminGroup)
+      .SendAsync("BookingCancelled", response);
+
+    await _hubContext.Clients
+      .Group(BookingHub.CustomerGroup(customerId))
+      .SendAsync("BookingCancelled", response);
+
+    return response;
   }
 
   public async Task<(List<BookingResponse> Items, int TotalCount)> GetAllAsync(
@@ -536,9 +558,17 @@ public class BookingService(AppDbContext dbContext)
 
     await _dbContext.SaveChangesAsync();
 
-    return await GetBookingResponseAsync(
-        booking.Id
-    );
+    var response = await GetBookingResponseAsync(booking.Id);
+
+    await _hubContext.Clients
+      .Group(BookingHub.AdminGroup)
+      .SendAsync("BookingStatusUpdated", response);
+
+    await _hubContext.Clients
+      .Group(BookingHub.CustomerGroup(booking.CustomerId))
+      .SendAsync("BookingStatusUpdated", response);
+
+    return response;
   }
 
   private async Task<BookingResponse> GetBookingResponseAsync(

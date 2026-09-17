@@ -7,6 +7,7 @@ using ServiceBooking.Api.Services;
 using System.Text;
 using System.Text.Json.Serialization;
 using ServiceBooking.Api.Converters;
+using ServiceBooking.Api.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,14 +28,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     ));
 
 builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-      var jwtKey = builder.Configuration["Jwt:Key"]
-          ?? throw new InvalidOperationException(
-              "JWT key is not configured.");
+  .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+  .AddJwtBearer(options =>
+  {
+    var jwtKey = builder.Configuration["Jwt:Key"]
+      ?? throw new InvalidOperationException(
+        "JWT key is not configured.");
 
-      options.TokenValidationParameters = new TokenValidationParameters
+    options.TokenValidationParameters =
+      new TokenValidationParameters
       {
         ValidateIssuer = true,
         ValidateAudience = true,
@@ -44,11 +46,27 @@ builder.Services
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
 
-        IssuerSigningKey = new SymmetricSecurityKey(
-              Encoding.UTF8.GetBytes(jwtKey)
-          )
+        IssuerSigningKey =
+          new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
       };
-    });
+
+    options.Events = new JwtBearerEvents
+    {
+      OnMessageReceived = context =>
+      {
+        var accessToken = context.Request.Query["access_token"];
+
+        var path = context.HttpContext.Request.Path;
+
+        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/bookings"))
+        {
+          context.Token = accessToken;
+        }
+
+        return Task.CompletedTask;
+      }
+    };
+  });
 
 builder.Services.AddAuthorization();
 
@@ -57,9 +75,20 @@ builder.Services.AddCors(options =>
   options.AddPolicy("AllowFrontend", policy =>
   {
     policy
-      .WithOrigins("http://localhost:3000")
+      .SetIsOriginAllowed(origin =>
+      {
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+        {
+          return false;
+        }
+
+        return uri.Scheme == Uri.UriSchemeHttp
+          && (uri.Host == "localhost" || uri.Host == "127.0.0.1")
+          && uri.Port == 3000;
+      })
       .AllowAnyHeader()
-      .AllowAnyMethod();
+      .AllowAnyMethod()
+      .AllowCredentials();
   });
 });
 
@@ -88,6 +117,19 @@ builder.Services.AddSwaggerGen(options =>
       });
 });
 
+builder.Services
+  .AddSignalR()
+  .AddJsonProtocol(options =>
+  {
+    options.PayloadSerializerOptions.Converters.Add(
+      new JsonStringEnumConverter()
+    );
+
+    options.PayloadSerializerOptions.Converters.Add(
+      new TimeOnlyJsonConverter()
+    );
+  });
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment()
@@ -97,14 +139,16 @@ if (app.Environment.IsDevelopment()
   app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
-
 app.UseCors("AllowFrontend");
+
+app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.MapHub<BookingHub>("/hubs/bookings");
 
 using (var scope = app.Services.CreateScope())
 {

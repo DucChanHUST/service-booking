@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { apiRoutes } from "@/lib/api-routes";
 import type { Booking, BookingStatus } from "@/types/booking";
+import { useBookingRealtime } from "@/lib/useBookingRealtime";
 
 import AuthGuard from "@/components/auth/AuthGuard";
 
@@ -147,6 +148,36 @@ function MyBookingsPageContent() {
       setSubmitting(false);
     }
   }
+
+  const handleBookingCreated = useCallback((booking: Booking) => {
+    setBookings((current) => {
+      const exists = current.some((item) => item.id === booking.id);
+
+      if (exists) {
+        return current;
+      }
+
+      return [booking, ...current];
+    });
+  }, []);
+
+  const handleBookingStatusUpdated = useCallback((booking: Booking) => {
+    setBookings((current) =>
+      current.map((item) => (item.id === booking.id ? booking : item)),
+    );
+  }, []);
+
+  const handleBookingCancelled = useCallback((booking: Booking) => {
+    setBookings((current) =>
+      current.map((item) => (item.id === booking.id ? booking : item)),
+    );
+  }, []);
+
+  useBookingRealtime({
+    onCreated: handleBookingCreated,
+    onCancelled: handleBookingCancelled,
+    onStatusUpdated: handleBookingStatusUpdated,
+  });
 
   if (loading) {
     return <div className="mx-auto max-w-6xl p-6">Loading bookings...</div>;
