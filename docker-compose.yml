@@ -26,6 +26,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      Swagger__Enabled: "true"
 
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
 
@@ -68,36 +69,8 @@ services:
     ports:
       - "80:80"
 
-    command:
-      - /bin/sh
-      - -c
-      - |
-        printf '%s\n' \
-          'server {' \
-          '    listen 80;' \
-          '    server_name _;' \
-          '' \
-          '    location /api/ {' \
-          '        proxy_pass http://api:8080;' \
-          '        proxy_http_version 1.1;' \
-          '        proxy_set_header Host $$host;' \
-          '        proxy_set_header X-Real-IP $$remote_addr;' \
-          '        proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;' \
-          '        proxy_set_header X-Forwarded-Proto $$scheme;' \
-          '    }' \
-          '' \
-          '    location / {' \
-          '        proxy_pass http://frontend:3000;' \
-          '        proxy_http_version 1.1;' \
-          '        proxy_set_header Host $$host;' \
-          '        proxy_set_header X-Real-IP $$remote_addr;' \
-          '        proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;' \
-          '        proxy_set_header X-Forwarded-Proto $$scheme;' \
-          '        proxy_set_header Upgrade $$http_upgrade;' \
-          '        proxy_set_header Connection "upgrade";' \
-          '    }' \
-          '}' > /etc/nginx/conf.d/default.conf
-        nginx -g 'daemon off;'
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
     depends_on:
       - frontend
