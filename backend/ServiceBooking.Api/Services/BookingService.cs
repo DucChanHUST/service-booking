@@ -692,4 +692,36 @@ public class BookingService(
       _ => false
     };
   }
+
+  public async Task CompleteExpiredBookingAsync(Guid bookingId)
+  {
+    var booking = await _dbContext.Bookings
+      .FirstOrDefaultAsync(x => x.Id == bookingId);
+
+    if (booking is null)
+      return;
+
+    if (booking.Status != BookingStatus.Pending &&
+      booking.Status != BookingStatus.Confirmed)
+    {
+      return;
+    }
+
+    if (booking.EndTime > DateTime.UtcNow)
+      return;
+
+    booking.Status = BookingStatus.Completed;
+
+    await _dbContext.SaveChangesAsync();
+
+    var response = await GetBookingResponseAsync(booking.Id);
+
+    await _hubContext.Clients
+      .Group(BookingHub.AdminGroup)
+      .SendAsync("BookingStatusUpdated", response);
+
+    await _hubContext.Clients
+      .Group(BookingHub.CustomerGroup(booking.CustomerId))
+      .SendAsync("BookingStatusUpdated", response);
+  }
 }

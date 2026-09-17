@@ -8,6 +8,9 @@ using System.Text;
 using System.Text.Json.Serialization;
 using ServiceBooking.Api.Converters;
 using ServiceBooking.Api.Hubs;
+using Hangfire;
+using Hangfire.PostgreSql;
+using ServiceBooking.Api.Services.Jobs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +29,16 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection")
     ));
+
+builder.Services.AddHangfire(config =>
+{
+  config.UsePostgreSqlStorage(options =>
+  {
+    options.UseNpgsqlConnection(
+      builder.Configuration.GetConnectionString("DefaultConnection"));
+  });
+});
+builder.Services.AddHangfireServer();
 
 builder.Services
   .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -97,6 +110,7 @@ builder.Services.AddScoped<ServiceManagementService>();
 builder.Services.AddScoped<StaffManagementService>();
 builder.Services.AddScoped<ScheduleManagementService>();
 builder.Services.AddScoped<BookingService>();
+builder.Services.AddScoped<BookingExpirationJob>();
 
 builder.Services.AddEndpointsApiExplorer();
 
@@ -146,6 +160,8 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.UseHangfireDashboard();
+
 app.MapControllers();
 
 app.MapHub<BookingHub>("/hubs/bookings");
@@ -157,5 +173,11 @@ using (var scope = app.Services.CreateScope())
 
   // await DbSeeder.SeedAsync(db);
 }
+
+RecurringJob.AddOrUpdate<BookingExpirationJob>(
+  "complete-expired-bookings",
+  job => job.ExecuteAsync(),
+  "*/10 * * * *"
+);
 
 app.Run();
