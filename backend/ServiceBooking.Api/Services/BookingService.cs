@@ -205,23 +205,6 @@ public class BookingService(
     // Then:
     //   local time -> UTC -> database
     // ========================================================
-    var localStartTime = request.StartTime;
-
-    if (localStartTime.Kind == DateTimeKind.Utc)
-    {
-      localStartTime = localStartTime.ToLocalTime();
-    }
-    else
-    {
-      localStartTime = DateTime.SpecifyKind(
-        localStartTime, DateTimeKind.Unspecified);
-    }
-
-    if (localStartTime <= DateTime.Now)
-    {
-      throw new ArgumentException("Booking time cannot be in the past.");
-    }
-
     await using var transaction =
       await _dbContext.Database.BeginTransactionAsync();
 
@@ -257,6 +240,24 @@ public class BookingService(
       if (!staff.IsActive)
       {
         throw new ArgumentException("Staff is inactive.");
+      }
+
+      var localStartTime = request.StartTime;
+
+      if (localStartTime.Kind == DateTimeKind.Utc)
+      {
+        localStartTime = localStartTime.ToLocalTime();
+      }
+      else
+      {
+        localStartTime = DateTime.SpecifyKind(
+          localStartTime, DateTimeKind.Unspecified
+        );
+      }
+
+      if (localStartTime <= DateTime.Now)
+      {
+        throw new ArgumentException("Booking time cannot be in the past.");
       }
 
       var localEndTime = localStartTime.AddMinutes(service.DurationMinutes);
@@ -685,7 +686,9 @@ public class BookingService(
   {
     return current switch
     {
-      BookingStatus.Pending => true,
+      BookingStatus.Pending =>
+        next is BookingStatus.Confirmed
+          or BookingStatus.Cancelled,
 
       BookingStatus.Confirmed =>
         next is BookingStatus.Completed
