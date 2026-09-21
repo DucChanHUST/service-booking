@@ -1,0 +1,20 @@
+services:
+  postgres-test:
+    image: postgres:16
+    container_name: service-booking-postgres-test
+
+    environment:
+      POSTGRES_DB: service_booking_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TZ: Asia/Ho_Chi_Minh
+      PGTZ: Asia/Ho_Chi_Minh
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_test_data:

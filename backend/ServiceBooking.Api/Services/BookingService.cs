@@ -189,6 +189,39 @@ public class BookingService(
       Guid customerId,
       CreateBookingRequest request)
   {
+    // ========================================================
+    // IMPORTANT TIMEZONE LOGIC
+    //
+    // request.StartTime comes from frontend as local
+    // business time, e.g.
+    //
+    // 2026-09-16T09:30:00
+    //
+    // At this point we MUST NOT convert to UTC yet.
+    //
+    // First:
+    //   local time -> validate schedule
+    //
+    // Then:
+    //   local time -> UTC -> database
+    // ========================================================
+    var localStartTime = request.StartTime;
+
+    if (localStartTime.Kind == DateTimeKind.Utc)
+    {
+      localStartTime = localStartTime.ToLocalTime();
+    }
+    else
+    {
+      localStartTime = DateTime.SpecifyKind(
+        localStartTime, DateTimeKind.Unspecified);
+    }
+
+    if (localStartTime <= DateTime.Now)
+    {
+      throw new ArgumentException("Booking time cannot be in the past.");
+    }
+
     await using var transaction =
       await _dbContext.Database.BeginTransactionAsync();
 
@@ -224,41 +257,6 @@ public class BookingService(
       if (!staff.IsActive)
       {
         throw new ArgumentException("Staff is inactive.");
-      }
-
-      // ========================================================
-      // IMPORTANT TIMEZONE LOGIC
-      //
-      // request.StartTime comes from frontend as local
-      // business time, e.g.
-      //
-      // 2026-09-16T09:30:00
-      //
-      // At this point we MUST NOT convert to UTC yet.
-      //
-      // First:
-      //   local time -> validate schedule
-      //
-      // Then:
-      //   local time -> UTC -> database
-      // ========================================================
-
-      var localStartTime = request.StartTime;
-
-      if (localStartTime.Kind == DateTimeKind.Utc)
-      {
-        localStartTime = localStartTime.ToLocalTime();
-      }
-      else
-      {
-        localStartTime = DateTime.SpecifyKind(
-          localStartTime, DateTimeKind.Unspecified
-        );
-      }
-
-      if (localStartTime <= DateTime.Now)
-      {
-        throw new ArgumentException("Booking time cannot be in the past.");
       }
 
       var localEndTime = localStartTime.AddMinutes(service.DurationMinutes);
@@ -687,9 +685,7 @@ public class BookingService(
   {
     return current switch
     {
-      BookingStatus.Pending =>
-        next is BookingStatus.Confirmed
-          or BookingStatus.Cancelled,
+      BookingStatus.Pending => true,
 
       BookingStatus.Confirmed =>
         next is BookingStatus.Completed

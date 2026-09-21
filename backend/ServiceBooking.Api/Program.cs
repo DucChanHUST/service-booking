@@ -38,7 +38,11 @@ builder.Services.AddHangfire(config =>
       builder.Configuration.GetConnectionString("DefaultConnection"));
   });
 });
-builder.Services.AddHangfireServer();
+
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+  builder.Services.AddHangfireServer();
+}
 
 builder.Services
   .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -155,7 +159,10 @@ if (app.Environment.IsDevelopment()
 
 app.UseCors("AllowFrontend");
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsEnvironment("Testing"))
+{
+  app.UseHttpsRedirection();
+}
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -174,10 +181,17 @@ using (var scope = app.Services.CreateScope())
   // await DbSeeder.SeedAsync(db);
 }
 
-RecurringJob.AddOrUpdate<BookingExpirationJob>(
-  "complete-expired-bookings",
-  job => job.ExecuteAsync(),
-  "*/10 * * * *"
-);
+if (!app.Environment.IsEnvironment("Testing"))
+{
+  RecurringJob.AddOrUpdate<BookingExpirationJob>(
+    "complete-expired-bookings",
+    job => job.ExecuteAsync(),
+    "*/10 * * * *"
+  );
+}
 
 app.Run();
+
+public partial class Program
+{
+}
